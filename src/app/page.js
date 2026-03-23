@@ -1,9 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 const C = {
   bg:      "#07080b",
-  panel:   "#0d0f14",
   card:    "#111318",
   cardHi:  "#161922",
   border:  "rgba(255,255,255,0.06)",
@@ -28,7 +27,7 @@ const STATUS = {
   contacted: { label: "Contacted", color: C.blue   },
   followup:  { label: "Follow-up", color: C.amber  },
   warm:      { label: "Warm",      color: C.green  },
-  closed:    { label: "Closed ✓",  color: C.purple },
+  closed:    { label: "Closed",    color: C.purple },
   cold:      { label: "Cold",      color: C.red    },
 };
 
@@ -43,16 +42,15 @@ KEY FACTS:
 - Email: trogers@rogers-websolutions.com | Calendly: calendly.com/trogers-rogers-websolutions/30min
 - Only available evenings and weekends
 
-TRAFTON'S VOICE — follow this exactly in all copy:
+TRAFTON'S VOICE — follow this exactly:
 - Direct and confident. Get to the point in the first sentence.
 - Consultative, not salesy. Point out a real problem, don't pitch a product.
-- Conversational but professional. Real person, not a marketing department.
-- Data-driven when available. Reference real ratings, review counts, missing website specifically.
-- Short. Every word earns its place. No padding.
+- Data-driven. Reference real ratings, review counts, missing website specifically.
+- Short. Every word earns its place.
 - Low-pressure close. Invite a conversation, don't close in the first message.
-- NEVER say: leverage, digital footprint, I'd love the opportunity, I hope this finds you well, we help businesses grow, synergy, solutions
+- NEVER say: leverage, digital footprint, I'd love the opportunity, I hope this finds you well, we help businesses grow
 - NEVER use em-dashes, exclamation points, or fake casual openers
-- NEVER invent data. Only reference facts provided about the actual business.`;
+- NEVER invent data. Only use facts provided about the actual business.`;
 
 const NICHES = [
   "HVAC companies Orange County",
@@ -64,6 +62,7 @@ const NICHES = [
   "landscapers Anaheim",
 ];
 
+// ─── API HELPERS ──────────────────────────────────────────────────────────────
 async function ai(system, user, maxTokens = 1000) {
   try {
     const res = await fetch("/api/chat", {
@@ -75,6 +74,15 @@ async function ai(system, user, maxTokens = 1000) {
     if (d.error) throw new Error(d.error.message);
     return d.content?.filter(b => b.type === "text").map(b => b.text).join("") || "";
   } catch (e) { return `Error: ${e.message}`; }
+}
+
+async function enrichLead(lead) {
+  const res = await fetch("/api/enrich", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: lead.name, website: lead.website, city: lead.city, category: lead.category, phone: lead.phone }),
+  });
+  return res.json();
 }
 
 async function fetchGmail() {
@@ -101,6 +109,25 @@ async function sendEmail(to, subject, body) {
   return res.json();
 }
 
+// Pipeline persistence
+async function loadPipeline() {
+  try {
+    const res = await fetch("/api/pipeline");
+    const d = await res.json();
+    return d.pipeline || [];
+  } catch { return []; }
+}
+
+async function savePipeline(pipeline) {
+  try {
+    await fetch("/api/pipeline", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pipeline }),
+    });
+  } catch {}
+}
+
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
 function Pill({ color, children, sm }) {
   return (
@@ -117,7 +144,7 @@ function Dot({ color, pulse, size = 7 }) {
 function Btn({ onClick, disabled, loading, children, color = C.green, sm }) {
   return (
     <button onClick={onClick} disabled={disabled || loading} style={{ fontFamily: MONO, fontSize: sm ? 10 : 11, letterSpacing: "0.07em", fontWeight: 500, padding: sm ? "5px 11px" : "9px 18px", borderRadius: 7, cursor: (disabled || loading) ? "not-allowed" : "pointer", background: (disabled || loading) ? "rgba(255,255,255,0.03)" : `${color}12`, border: `1px solid ${(disabled || loading) ? "rgba(255,255,255,0.07)" : color + "45"}`, color: (disabled || loading) ? C.muted : color, transition: "all 0.15s" }}>
-      {loading ? <span style={{ animation: "blink 0.9s step-start infinite" }}>···</span> : children}
+      {loading ? <span style={{ animation: "blink 0.9s step-start infinite" }}>...</span> : children}
     </button>
   );
 }
@@ -150,7 +177,7 @@ function Field({ value, onChange, placeholder, rows, onKeyDown }) {
 function CopyBtn({ text, label = "Copy", sm }) {
   const [copied, setCopied] = useState(false);
   function copy() { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }
-  return <Btn onClick={copy} color={copied ? C.green : C.muted} sm={sm}>{copied ? "Copied ✓" : label}</Btn>;
+  return <Btn onClick={copy} color={copied ? C.green : C.muted} sm={sm}>{copied ? "Copied" : label}</Btn>;
 }
 
 // ─── PIN GATE ─────────────────────────────────────────────────────────────────
@@ -187,17 +214,17 @@ function LoginScreen({ onEnter, onPrepReady }) {
   const [loading, setLoading]       = useState(true);
   const [prepStatus, setPrepStatus] = useState("running");
 
-  const now       = new Date();
-  const hour      = now.getHours();
-  const greet     = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const dayStr    = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  const isWeekend = [0, 6].includes(now.getDay());
+  const now        = new Date();
+  const hour       = now.getHours();
+  const greet      = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const dayStr     = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const isWeekend  = [0, 6].includes(now.getDay());
   const todayNiche = NICHES[now.getDay() % NICHES.length];
 
   useEffect(() => {
     const briefP = ai(
       RWS_CTX + `\n\nGenerate a daily briefing. Return ONLY valid JSON, no backticks:
-{"synopsis":"2-3 sentences. Day/date. Weekend means no day job.","focus":"Single highest-leverage RWS task today.","tech":"2 sentences on a specific real networking/AI/web infrastructure trend relevant to a Senior Network Engineer building a web side business.","motivation":"One grounded, punchy sentence. No quotes. Not cheesy."}`,
+{"synopsis":"2-3 sentences. Day/date. Weekend means no day job.","focus":"Single highest-leverage RWS task today.","tech":"2 sentences on a specific real networking/AI/web infrastructure trend relevant to a Senior Network Engineer building a web side business. Name actual tech.","motivation":"One grounded punchy sentence. No quotes. Not cheesy."}`,
       `Today: ${dayStr}. Weekend: ${isWeekend}. Hour: ${hour}. Location: Anaheim CA.`
     ).then(raw => {
       try { setBrief(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
@@ -209,17 +236,18 @@ function LoginScreen({ onEnter, onPrepReady }) {
       try {
         const data = await fetchLeads(todayNiche);
         const prospects = (data.prospects || []).filter(p => !p.hasWebsite).slice(0, 6);
-        const drafts = {};
-        await Promise.all(prospects.filter(p => p.grade !== "C").map(async p => {
-          const raw = await ai(
-            RWS_CTX + `\n\nWrite an IG DM and cold email for this real business. Return ONLY valid JSON, no backticks:
-{"dm":"3-4 sentence Instagram DM. Reference their real rating/reviews if strong. Mention no website. Calendly close. Human voice.","emailSubject":"Subject line referencing their real data","emailBody":"Cold email body. Use real rating and review count. Call out the website gap. 3-4 short paragraphs. Calendly close. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
-            `Business: ${p.name} | City: ${p.city} | Rating: ${p.rating} | Reviews: ${p.reviews} | Category: ${p.category} | Has website: ${p.hasWebsite}`
-          );
-          try { drafts[p.name] = JSON.parse(raw.replace(/```json|```/g, "").trim()); }
-          catch { drafts[p.name] = { dm: raw, emailSubject: `Your ${p.rating}-star reputation deserves a website`, emailBody: raw }; }
-        }));
-        onPrepReady({ prospects, drafts, niche: todayNiche });
+        // Enrich top A-grade leads on login
+        const enriched = await Promise.all(
+          prospects.filter(p => p.grade === "A").slice(0, 3).map(async p => {
+            const enrichment = await enrichLead(p);
+            return { ...p, ...enrichment };
+          })
+        );
+        const allProspects = prospects.map(p => {
+          const e = enriched.find(e => e.name === p.name);
+          return e || p;
+        });
+        onPrepReady({ prospects: allProspects, niche: todayNiche });
       } catch (e) { console.error("prep error", e); }
       setPrepStatus("done");
     })();
@@ -260,7 +288,6 @@ function LoginScreen({ onEnter, onPrepReady }) {
               </>
           }
         </>)}
-
         {card("0.24s", <>
           <Label>Tech Pulse</Label>
           {loading
@@ -268,23 +295,21 @@ function LoginScreen({ onEnter, onPrepReady }) {
             : <p style={{ fontFamily: BODY, fontSize: 13, lineHeight: 1.75, color: C.sub, margin: 0 }}>{brief?.tech}</p>
           }
         </>)}
-
         {!loading && brief?.motivation && card("0.36s",
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <span style={{ fontFamily: SERIF, fontSize: 22, color: C.border2, flexShrink: 0 }}>"</span>
             <p style={{ fontFamily: SERIF, fontStyle: "italic", fontSize: 14, color: C.sub, margin: 0, lineHeight: 1.65 }}>{brief.motivation}</p>
           </div>
         )}
-
         {card("0.46s",
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
               <Label>Today's Leads</Label>
               <p style={{ fontFamily: BODY, fontSize: 13, color: C.sub, margin: 0 }}>
-                {prepStatus === "running" ? `Pulling real businesses: ${todayNiche}` : "Real leads + copy ready in Leads tab"}
+                {prepStatus === "running" ? `Pulling + enriching: ${todayNiche}` : "Leads enriched and ready"}
               </p>
             </div>
-            <Pill color={prepStatus === "done" ? C.green : C.amber}>{prepStatus === "done" ? "ready" : "pulling"}</Pill>
+            <Pill color={prepStatus === "done" ? C.green : C.amber}>{prepStatus === "done" ? "ready" : "working"}</Pill>
           </div>
         )}
       </div>
@@ -316,10 +341,7 @@ function EmailModule({ state, setState }) {
     if (!data.emails?.length) { setState(s => ({ ...s, triaging: false, triage: "Inbox is clear — no unread messages." })); return; }
 
     const emailSummary = data.emails.map((e, i) => `${i + 1}. FROM: ${e.from}\nSUBJECT: ${e.subject}\nSNIPPET: ${e.snippet}`).join("\n\n");
-    const result = await ai(
-      RWS_CTX + `\n\nTriage this real inbox. For each: is it an RWS lead? Does it need a reply? Recommended action (reply / ignore / follow-up)? Be direct. FORMAT: FROM / SUBJECT / SUMMARY / ACTION`,
-      `${data.emails.length} unread emails:\n\n${emailSummary}`
-    );
+    const result = await ai(RWS_CTX + `\n\nTriage this real inbox. For each: is it an RWS lead? Does it need a reply? Recommended action (reply / ignore / follow-up)? FORMAT: FROM / SUBJECT / SUMMARY / ACTION`, `${data.emails.length} unread emails:\n\n${emailSummary}`);
     setState(s => ({ ...s, triage: result, triaging: false }));
   }
 
@@ -343,7 +365,7 @@ function EmailModule({ state, setState }) {
       {authError
         ? <div style={{ background: `${C.amber}10`, border: `1px solid ${C.amber}30`, borderRadius: 8, padding: "13px 15px" }}>
             <p style={{ fontFamily: MONO, fontSize: 11, color: C.amber, margin: "0 0 8px" }}>Google not authorized.</p>
-            <a href="/api/auth/google" style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>Connect Gmail</a>
+            <a href="/api/auth/google" style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>Reconnect Gmail</a>
           </div>
         : <TextBox value={triage} loading={triaging} placeholder="Hit 'Pull Inbox' to fetch and triage your real Gmail." />
       }
@@ -379,7 +401,7 @@ function CalendarModule({ state, setState }) {
       return `- ${start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} ${e.allDay ? "(all day)" : start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}: ${e.title}`;
     }).join("\n");
 
-    const result = await ai(RWS_CTX + `\n\nReview Trafton's calendar. Flag anything during 8-5 M-F. Note evening/weekend slots available for RWS calls. Clean day-by-day summary.`, `Events next 7 days:\n${evtText}`);
+    const result = await ai(RWS_CTX + `\n\nReview Trafton's calendar. Flag anything during 8-5 M-F. Note evening/weekend slots for RWS calls. Clean day-by-day summary.`, `Events next 7 days:\n${evtText}`);
     setState(s => ({ ...s, summary: result, loading: false }));
   }
 
@@ -389,13 +411,11 @@ function CalendarModule({ state, setState }) {
         <Dot color={C.blue} /><span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Calendar</span>
         <Pill color={C.blue} sm>GCal</Pill>
       </div>
-      <div style={{ marginBottom: 14 }}>
-        <Btn onClick={pullWeek} loading={loading} color={C.blue}>Pull This Week</Btn>
-      </div>
+      <div style={{ marginBottom: 14 }}><Btn onClick={pullWeek} loading={loading} color={C.blue}>Pull This Week</Btn></div>
       {authError
         ? <div style={{ background: `${C.amber}10`, border: `1px solid ${C.amber}30`, borderRadius: 8, padding: "13px 15px" }}>
             <p style={{ fontFamily: MONO, fontSize: 11, color: C.amber, margin: "0 0 8px" }}>Google not authorized.</p>
-            <a href="/api/auth/google" style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>Connect Google</a>
+            <a href="/api/auth/google" style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>Reconnect Google</a>
           </div>
         : <TextBox value={summary} loading={loading} placeholder="Pull your week — reads your real Google Calendar." />
       }
@@ -404,24 +424,41 @@ function CalendarModule({ state, setState }) {
 }
 
 // ─── LEAD CARD ────────────────────────────────────────────────────────────────
-function LeadCard({ prospect, prepDraft, onAdd, inPipeline }) {
+function LeadCard({ prospect: initialProspect, onAdd, inPipeline }) {
+  const [prospect, setProspect]     = useState(initialProspect);
   const [expanded, setExpanded]     = useState(false);
-  const [draft, setDraft]           = useState(prepDraft || null);
+  const [draft, setDraft]           = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [enriching, setEnriching]   = useState(false);
   const [sending, setSending]       = useState(false);
   const [sendResult, setSendResult] = useState(null);
-  const [recipientEmail, setRecipient] = useState("");
-  const [showSendForm, setShowSendForm] = useState(false);
+  const [recipient, setRecipient]   = useState(prospect.email || "");
+  const [showSend, setShowSend]     = useState(false);
 
   const gc = GRADE_COLOR[prospect.grade] || C.muted;
+  const isEnriched = prospect.enriched || prospect.email || prospect.instagram;
+
+  async function handleEnrich() {
+    setEnriching(true);
+    const result = await enrichLead(prospect);
+    setProspect(p => ({ ...p, ...result }));
+    if (result.email) setRecipient(result.email);
+    setEnriching(false);
+  }
 
   async function generateCopy() {
     if (draft) { setExpanded(e => !e); return; }
     setGenerating(true);
+    const contactInfo = [
+      prospect.email ? `Email: ${prospect.email}` : null,
+      prospect.instagram ? `Instagram: ${prospect.instagram}` : null,
+      prospect.phone ? `Phone: ${prospect.phone}` : null,
+    ].filter(Boolean).join(" | ");
+
     const raw = await ai(
       RWS_CTX + `\n\nWrite an IG DM and cold email for this REAL business. Return ONLY valid JSON, no backticks:
-{"dm":"3-4 sentences. Instagram DM. Reference real rating and review count if notable. Specifically mention no website. End with Calendly link. Casual but not sycophantic.","emailSubject":"Subject line using their real data points","emailBody":"Cold email. First line hooks with their real numbers. Body explains the website gap and what they're losing. Short paragraphs. Calendly close. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
-      `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating} stars | Reviews: ${prospect.reviews} | Has website: ${prospect.hasWebsite} | Google Maps: ${prospect.mapsUrl}`
+{"dm":"3-4 sentences. Instagram DM. Reference real rating and review count. Mention no website specifically. End with Calendly link. Human voice, not corporate.","emailSubject":"Subject line using their real data — rating, reviews, or category","emailBody":"Cold email. First line uses their real numbers to hook. Explains the website gap and what they're losing. 3-4 short paragraphs. Calendly close. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+      `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating} stars | Reviews: ${prospect.reviews} | Has website: ${prospect.hasWebsite} | ${contactInfo}`
     );
     try { setDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
     catch { setDraft({ dm: raw, emailSubject: `${prospect.name} — ${prospect.reviews} reviews, no website`, emailBody: raw }); }
@@ -430,12 +467,15 @@ function LeadCard({ prospect, prepDraft, onAdd, inPipeline }) {
   }
 
   async function handleSend() {
-    if (!recipientEmail.trim() || !draft) return;
+    if (!recipient.trim() || !draft) return;
     setSending(true); setSendResult(null);
-    const result = await sendEmail(recipientEmail, draft.emailSubject, draft.emailBody);
+    const result = await sendEmail(recipient, draft.emailSubject, draft.emailBody);
     setSendResult(result.success ? "sent" : "error");
     setSending(false);
-    if (result.success) { setShowSendForm(false); onAdd({ ...prospect, status: "contacted" }); }
+    if (result.success) {
+      setShowSend(false);
+      onAdd({ ...prospect, status: "contacted" });
+    }
   }
 
   return (
@@ -446,50 +486,62 @@ function LeadCard({ prospect, prepDraft, onAdd, inPipeline }) {
             <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 700, color: C.text }}>{prospect.name}</span>
             <Pill color={gc} sm>Grade {prospect.grade}</Pill>
             {!prospect.hasWebsite && <Pill color={C.green} sm>No website</Pill>}
+            {isEnriched && <Pill color={C.blue} sm>Enriched</Pill>}
           </div>
           <p style={{ fontFamily: MONO, fontSize: 11, color: C.muted, margin: "0 0 5px" }}>{prospect.address}</p>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 4 }}>
             {prospect.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>★ {prospect.rating} ({prospect.reviews} reviews)</span>}
-            <a href={prospect.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Google Maps</a>
+            {prospect.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{prospect.phone}</span>}
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <a href={prospect.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>
             {prospect.website && <a href={prospect.website} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textDecoration: "none" }}>Website</a>}
+            {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{prospect.instagramHandle || "Instagram"}</a>}
+            {prospect.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{prospect.email}</span>}
           </div>
           <p style={{ fontFamily: MONO, fontSize: 10, color: gc, margin: "6px 0 0" }}>{prospect.gradeReason}</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <Btn onClick={() => onAdd(prospect)} disabled={inPipeline} color={inPipeline ? C.purple : C.green} sm>{inPipeline ? "Added" : "+ Pipeline"}</Btn>
+          {!isEnriched && <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>Enrich</Btn>}
           <Btn onClick={generateCopy} loading={generating} color={C.amber} sm>{draft ? (expanded ? "Hide" : "Show Copy") : "Get Copy"}</Btn>
         </div>
       </div>
 
       {expanded && draft && (
         <div style={{ borderTop: `1px solid ${C.border}`, padding: "16px" }}>
+          {/* IG DM */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <Label>IG DM</Label>
-              <CopyBtn text={draft.dm} label="Copy DM" sm />
+              <div style={{ display: "flex", gap: 6 }}>
+                <CopyBtn text={draft.dm} label="Copy DM" sm />
+                {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>Open IG</a>}
+              </div>
             </div>
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
           </div>
 
+          {/* Cold Email */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <Label>Cold Email</Label>
               <div style={{ display: "flex", gap: 6 }}>
                 <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
-                <Btn onClick={() => setShowSendForm(f => !f)} color={C.green} sm>Send via Gmail</Btn>
+                <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>Send via Gmail</Btn>
               </div>
             </div>
             <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
 
-            {showSendForm && (
+            {showSend && (
               <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                <input value={recipientEmail} onChange={e => setRecipient(e.target.value)} placeholder="recipient@email.com"
+                <input value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="recipient@email.com"
                   style={{ flex: 1, background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "8px 12px", fontFamily: MONO, fontSize: 12, color: C.text, outline: "none" }} />
-                <Btn onClick={handleSend} loading={sending} disabled={!recipientEmail.trim()} color={C.green} sm>Send</Btn>
+                <Btn onClick={handleSend} loading={sending} disabled={!recipient.trim()} color={C.green} sm>Send</Btn>
               </div>
             )}
-            {sendResult === "sent"  && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent from trogers@rogers-websolutions.com</p>}
+            {sendResult === "sent"  && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent from trogers@rogers-websolutions.com — lead moved to Contacted</p>}
             {sendResult === "error" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red,   margin: "8px 0 0" }}>Send failed — check Gmail auth</p>}
           </div>
         </div>
@@ -498,16 +550,23 @@ function LeadCard({ prospect, prepDraft, onAdd, inPipeline }) {
   );
 }
 
-// ─── LEAD SCRAPER MODULE ──────────────────────────────────────────────────────
+// ─── LEAD SCRAPER ─────────────────────────────────────────────────────────────
 function LeadScraper({ state, setState, onAdd, pipelineNames }) {
-  const { niche = "", prospects = [], loading = false, error = "", prepDrafts = {} } = state;
+  const { niche = "", prospects = [], loading = false, error = "" } = state;
 
   async function search() {
     if (!niche.trim()) return;
-    setState(s => ({ ...s, loading: true, prospects: [], error: "" }));
+    setState(s => ({ ...s, loading: true, error: "" }));
+    // Don't wipe existing prospects — append new ones, dedup by name
     const data = await fetchLeads(niche);
     if (data.error) { setState(s => ({ ...s, loading: false, error: data.error })); return; }
-    setState(s => ({ ...s, loading: false, prospects: data.prospects || [] }));
+    const newProspects = data.prospects || [];
+    setState(s => {
+      const existing = s.prospects || [];
+      const existingNames = new Set(existing.map(p => p.name));
+      const merged = [...existing, ...newProspects.filter(p => !existingNames.has(p.name))];
+      return { ...s, loading: false, prospects: merged, lastSearch: niche };
+    });
   }
 
   const aGrade = prospects.filter(p => p.grade === "A");
@@ -521,17 +580,21 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
           <Dot color={C.amber} />
           <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Lead Scraper</span>
           <Pill color={C.blue} sm>Google Maps · Real Data</Pill>
+          {prospects.length > 0 && <Pill color={C.green} sm>{prospects.length} loaded</Pill>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <Field value={niche} onChange={v => setState(s => ({ ...s, niche: v }))} placeholder="e.g. nail salons Anaheim, HVAC Orange County, plumbers Tustin" onKeyDown={e => e.key === "Enter" && search()} />
           <Btn onClick={search} loading={loading} disabled={!niche.trim()} color={C.amber}>Search</Btn>
         </div>
+        {prospects.length > 0 && (
+          <button onClick={() => setState(s => ({ ...s, prospects: [] }))} style={{ marginTop: 8, fontFamily: MONO, fontSize: 10, background: "transparent", border: "none", color: C.muted, cursor: "pointer", padding: 0 }}>
+            Clear all results
+          </button>
+        )}
         {error && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "10px 0 0" }}>Error: {error}</p>}
       </Card>
 
-      {loading && (
-        <Card><p style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Pulling real businesses from Google Maps...</span></p></Card>
-      )}
+      {loading && <Card><p style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Pulling real businesses from Google Maps...</span></p></Card>}
 
       {!loading && prospects.length > 0 && (
         <>
@@ -552,24 +615,19 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
             <div>
               <div style={{ marginBottom: 10 }}><Pill color={C.green}>Grade A — Best Prospects</Pill></div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {aGrade.map((p, i) => <LeadCard key={i} prospect={p} prepDraft={prepDrafts[p.name]} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} />)}
+                {aGrade.map((p, i) => <LeadCard key={`${p.name}-${i}`} prospect={p} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} />)}
               </div>
             </div>
           )}
-
           {bGrade.length > 0 && (
             <div>
               <div style={{ marginBottom: 10, marginTop: 6 }}><Pill color={C.amber}>Grade B</Pill></div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {bGrade.map((p, i) => <LeadCard key={i} prospect={p} prepDraft={prepDrafts[p.name]} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} />)}
+                {bGrade.map((p, i) => <LeadCard key={`${p.name}-${i}`} prospect={p} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} />)}
               </div>
             </div>
           )}
         </>
-      )}
-
-      {!loading && prospects.length === 0 && niche && !error && (
-        <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No results yet — hit Search to pull real businesses from Google Maps.</p></Card>
       )}
     </div>
   );
@@ -588,7 +646,7 @@ function OutreachModule({ state, setState, pipeline }) {
 
   async function generate() {
     const target = selected
-      ? `Business: ${selected.name} | City: ${selected.city} | Rating: ${selected.rating} stars | Reviews: ${selected.reviews} | Has website: ${selected.hasWebsite}`
+      ? `Business: ${selected.name} | City: ${selected.city} | Rating: ${selected.rating} stars | Reviews: ${selected.reviews} | Has website: ${selected.hasWebsite}${selected.email ? ` | Email: ${selected.email}` : ""}${selected.instagram ? ` | Instagram: ${selected.instagram}` : ""}`
       : custom;
     if (!target.trim()) return;
     setState(s => ({ ...s, loading: true, output: "" }));
@@ -602,17 +660,19 @@ function OutreachModule({ state, setState, pipeline }) {
     setState(s => ({ ...s, output: r, loading: false }));
   }
 
+  const activePipeline = pipeline.filter(l => ["new","contacted","followup","warm"].includes(l.status));
+
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
         <Dot color={C.purple} /><span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Outreach</span>
       </div>
 
-      {pipeline.length > 0 && (
+      {activePipeline.length > 0 && (
         <>
           <Label>Pipeline Leads</Label>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
-            {pipeline.filter(l => ["new","contacted","followup","warm"].includes(l.status)).map(l => (
+            {activePipeline.map(l => (
               <button key={l.id} onClick={() => setState(s => ({ ...s, selected: l, custom: "", output: "" }))}
                 style={{ fontFamily: MONO, fontSize: 10, padding: "5px 12px", borderRadius: 20, cursor: "pointer", background: selected?.id === l.id ? `${C.purple}20` : "rgba(255,255,255,0.04)", border: `1px solid ${selected?.id === l.id ? C.purple : C.border}`, color: selected?.id === l.id ? C.purple : C.sub, transition: "all 0.15s" }}>
                 {l.name}
@@ -661,14 +721,20 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
   const visible = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
   const active  = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
   const closed  = pipeline.filter(l => l.status === "closed").length;
+  const contacted = pipeline.filter(l => l.status !== "new").length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-        {[{ label: "Total", val: pipeline.length, color: C.sub }, { label: "Active", val: active, color: C.green }, { label: "Closed", val: closed, color: C.purple }].map(s => (
-          <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 18px", textAlign: "center" }}>
-            <div style={{ fontFamily: MONO, fontSize: 22, fontWeight: 500, color: s.color, marginBottom: 4 }}>{s.val}</div>
-            <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{s.label}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+        {[
+          { label: "Total",      val: pipeline.length, color: C.sub    },
+          { label: "Active",     val: active,          color: C.green  },
+          { label: "Contacted",  val: contacted,       color: C.blue   },
+          { label: "Closed",     val: closed,          color: C.purple },
+        ].map(s => (
+          <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
+            <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 500, color: s.color, marginBottom: 3 }}>{s.val}</div>
+            <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{s.label}</div>
           </div>
         ))}
       </div>
@@ -693,16 +759,23 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
                   <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "15px 18px" }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
                       <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                           <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 600, color: C.text }}>{l.name}</span>
                           <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{l.city}</span>
+                          {l.grade && <Pill color={GRADE_COLOR[l.grade] || C.muted} sm>Grade {l.grade}</Pill>}
                         </div>
-                        {l.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>★ {l.rating} ({l.reviews} reviews) </span>}
-                        {l.mapsUrl && <a href={l.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>}
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                          {l.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>★ {l.rating} ({l.reviews} reviews)</span>}
+                          {l.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{l.phone}</span>}
+                          {l.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{l.email}</span>}
+                          {l.mapsUrl && <a href={l.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>}
+                          {l.instagram && <a href={l.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{l.instagramHandle || "Instagram"}</a>}
+                        </div>
+                        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, margin: "4px 0 0" }}>Added {l.addedAt}</p>
                       </div>
                       <Pill color={s.color}>{s.label}</Pill>
                     </div>
-                    <p style={{ fontFamily: BODY, fontSize: 12, color: C.sub, margin: "0 0 12px" }}>{l.gradeReason || l.why || ""}</p>
+
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
                       {Object.entries(STATUS).map(([id, st]) => (
                         <button key={id} onClick={() => onUpdate(l.id, { status: id })}
@@ -711,6 +784,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
                         </button>
                       ))}
                     </div>
+
                     {editing === l.id
                       ? <div style={{ display: "flex", gap: 6 }}>
                           <Field value={notes[l.id] ?? l.notes ?? ""} onChange={v => setNotes(p => ({ ...p, [l.id]: v }))} placeholder="Add notes..." rows={2} />
@@ -738,29 +812,60 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
 
 // ─── COMMAND CENTER ────────────────────────────────────────────────────────────
 function CommandCenter({ prepData }) {
-  const [tab, setTab] = useState("leads");
-
-  // All module state lives here — persists across tab switches
+  const [tab, setTab]               = useState("leads");
+  const [pipelineLoaded, setPipelineLoaded] = useState(false);
   const [emailState,    setEmailState]    = useState({});
   const [calendarState, setCalendarState] = useState({});
   const [leadsState,    setLeadsState]    = useState({
-    niche:      prepData?.niche || "",
-    prospects:  prepData?.prospects || [],
-    prepDrafts: prepData?.drafts || {},
-    loading:    false,
-    error:      "",
+    niche:     prepData?.niche || "",
+    prospects: prepData?.prospects || [],
+    loading:   false,
+    error:     "",
   });
   const [outreachState, setOutreachState] = useState({ type: "cold" });
-  const [pipeline, setPipeline] = useState(
-    (prepData?.prospects || [])
-      .filter(p => p.grade === "A")
-      .slice(0, 3)
-      .map(p => ({ id: Date.now() + Math.random(), status: "new", notes: "", addedAt: new Date().toLocaleDateString(), ...p }))
-  );
+  const [pipeline, setPipelineRaw] = useState([]);
+
+  // Load pipeline from server on mount
+  useEffect(() => {
+    loadPipeline().then(saved => {
+      if (saved.length > 0) {
+        setPipelineRaw(saved);
+      } else if (prepData?.prospects?.length > 0) {
+        // Seed with today's Grade A leads if pipeline is empty
+        const seeds = prepData.prospects
+          .filter(p => p.grade === "A")
+          .slice(0, 3)
+          .map(p => ({ id: `${Date.now()}-${Math.random()}`, status: "new", notes: "", addedAt: new Date().toLocaleDateString(), ...p }));
+        setPipelineRaw(seeds);
+      }
+      setPipelineLoaded(true);
+    });
+  }, []);
+
+  // Save pipeline to server whenever it changes (after initial load)
+  useEffect(() => {
+    if (pipelineLoaded && pipeline.length >= 0) {
+      savePipeline(pipeline);
+    }
+  }, [pipeline, pipelineLoaded]);
 
   function addToPipeline(prospect) {
     if (pipelineNames.has(prospect.name)) return;
-    setPipeline(p => [...p, { id: Date.now() + Math.random(), status: prospect.status || "new", notes: "", addedAt: new Date().toLocaleDateString(), ...prospect }]);
+    setPipelineRaw(p => [...p, {
+      id: `${Date.now()}-${Math.random()}`,
+      status: prospect.status || "new",
+      notes: "",
+      addedAt: new Date().toLocaleDateString(),
+      ...prospect,
+    }]);
+  }
+
+  function updateLead(id, patch) {
+    setPipelineRaw(p => p.map(l => l.id === id ? { ...l, ...patch } : l));
+  }
+
+  function removeLead(id) {
+    setPipelineRaw(p => p.filter(l => l.id !== id));
   }
 
   const pipelineNames  = new Set(pipeline.map(l => l.name));
@@ -784,7 +889,7 @@ function CommandCenter({ prepData }) {
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>· ops.rogers-websolutions.com</span>
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            {[{ c: C.green, l: "Gmail" }, { c: C.blue, l: "GCal" }, { c: C.green, l: "AI" }].map(s => (
+            {[{ c: C.green, l: "Gmail" }, { c: C.blue, l: "GCal" }, { c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
               <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <Dot color={s.c} size={5} />
                 <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{s.l}</span>
@@ -808,12 +913,12 @@ function CommandCenter({ prepData }) {
       </div>
 
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 24px" }}>
-        {/* All modules always mounted — display toggled — this is what prevents state loss */}
+        {/* All modules always mounted — tab switch never wipes state */}
         <div style={{ display: tab === "email"    ? "block" : "none" }}><EmailModule    state={emailState}    setState={setEmailState} /></div>
         <div style={{ display: tab === "calendar" ? "block" : "none" }}><CalendarModule state={calendarState} setState={setCalendarState} /></div>
         <div style={{ display: tab === "leads"    ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} /></div>
         <div style={{ display: tab === "outreach" ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
-        <div style={{ display: tab === "pipeline" ? "block" : "none" }}><PipelineModule pipeline={pipeline} onUpdate={(id, p) => setPipeline(prev => prev.map(l => l.id === id ? { ...l, ...p } : l))} onRemove={id => setPipeline(prev => prev.filter(l => l.id !== id))} /></div>
+        <div style={{ display: tab === "pipeline" ? "block" : "none" }}><PipelineModule pipeline={pipeline} onUpdate={updateLead} onRemove={removeLead} /></div>
       </div>
 
       <style>{`
