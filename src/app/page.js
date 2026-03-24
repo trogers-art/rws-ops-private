@@ -39,7 +39,7 @@ KEY FACTS:
 - Trafton works a full-time day job 8-5 M-F as a Senior Network Engineer in Anaheim
 - RWS builds affordable websites ($500-$1,000) with monthly care plans ($150-$300/mo)
 - Target clients: local OC small businesses — trades (HVAC, plumbing, electrical), nail techs, handymen, independent motels, Instagram-based service businesses
-- Email: trogers@rogers-websolutions.com | Calendly: calendly.com/trogers-rogers-websolutions/30min
+- Email: trogers@rogers-websolutions.com | Book a call: https://www.rogers-websolutions.com/book
 - Only available evenings and weekends
 
 TRAFTON'S VOICE — follow this exactly:
@@ -47,7 +47,7 @@ TRAFTON'S VOICE — follow this exactly:
 - Consultative, not salesy. Point out a real problem, don't pitch a product.
 - Data-driven. Reference real ratings, review counts, missing website specifically.
 - Short. Every word earns its place.
-- Low-pressure close. Invite a conversation, don't close in the first message.
+- Low-pressure close. Invite a conversation, send them to https://www.rogers-websolutions.com/book to book.
 - NEVER say: leverage, digital footprint, I'd love the opportunity, I hope this finds you well, we help businesses grow
 - NEVER use em-dashes, exclamation points, or fake casual openers
 - NEVER invent data. Only use facts provided about the actual business.`;
