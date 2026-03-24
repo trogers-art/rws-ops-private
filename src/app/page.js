@@ -31,7 +31,7 @@ const STATUS = {
   cold:      { label: "Cold",      color: C.red    },
 };
 
-const GRADE_COLOR = { A: C.green, B: C.amber, C: C.muted };
+const GRADE_COLOR = { A: C.green, B: C.amber, C: C.blue, D: C.muted };
 
 const RWS_CTX = `You are the AI operations assistant for Rogers Web Solutions (RWS), a web design agency in Anaheim / Orange County, CA run by Trafton Rogers.
 
@@ -571,7 +571,16 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
 
   const aGrade = prospects.filter(p => p.grade === "A");
   const bGrade = prospects.filter(p => p.grade === "B");
+  const cGrade = prospects.filter(p => p.grade === "C");
+  const dGrade = prospects.filter(p => p.grade === "D");
   const noSite = prospects.filter(p => !p.hasWebsite);
+
+  const gradeGroups = [
+    { grade: "A", label: "Grade A — Perfect Fit",        color: C.green,  items: aGrade },
+    { grade: "B", label: "Grade B — Solid Prospect",     color: C.amber,  items: bGrade },
+    { grade: "C", label: "Grade C — Redesign / Care Plan", color: C.blue, items: cGrade },
+    { grade: "D", label: "Grade D — Has Website",        color: C.muted,  items: dGrade },
+  ].filter(g => g.items.length > 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -583,7 +592,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
           {prospects.length > 0 && <Pill color={C.green} sm>{prospects.length} loaded</Pill>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Field value={niche} onChange={v => setState(s => ({ ...s, niche: v }))} placeholder="e.g. nail salons Anaheim, HVAC Orange County, plumbers Tustin" onKeyDown={e => e.key === "Enter" && search()} />
+          <Field value={niche} onChange={v => setState(s => ({ ...s, niche: v }))} placeholder="e.g. lashes Orange County, HVAC Anaheim, plumbers Tustin" onKeyDown={e => e.key === "Enter" && search()} />
           <Btn onClick={search} loading={loading} disabled={!niche.trim()} color={C.amber}>Search</Btn>
         </div>
         {prospects.length > 0 && (
@@ -598,36 +607,38 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
 
       {!loading && prospects.length > 0 && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+          {/* Stats bar */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
             {[
-              { label: "Total Found", val: prospects.length, color: C.sub   },
-              { label: "No Website",  val: noSite.length,   color: C.green },
-              { label: "Grade A",     val: aGrade.length,   color: C.amber },
+              { label: "Total",    val: prospects.length, color: C.sub   },
+              { label: "No Site",  val: noSite.length,   color: C.green },
+              { label: "Grade A",  val: aGrade.length,   color: C.green },
+              { label: "Grade B",  val: bGrade.length,   color: C.amber },
+              { label: "Grade C",  val: cGrade.length,   color: C.blue  },
             ].map(s => (
-              <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
-                <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 500, color: s.color, marginBottom: 3 }}>{s.val}</div>
-                <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{s.label}</div>
+              <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
+                <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: s.color, marginBottom: 2 }}>{s.val}</div>
+                <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase" }}>{s.label}</div>
               </div>
             ))}
           </div>
 
-          {aGrade.length > 0 && (
-            <div>
-              <div style={{ marginBottom: 10 }}><Pill color={C.green}>Grade A — Best Prospects</Pill></div>
+          {/* All grade groups */}
+          {gradeGroups.map(g => (
+            <div key={g.grade}>
+              <div style={{ marginBottom: 10 }}><Pill color={g.color}>{g.label}</Pill></div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {aGrade.map((p, i) => <LeadCard key={`${p.name}-${i}`} prospect={p} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} />)}
+                {g.items.map((p, i) => (
+                  <LeadCard key={`${p.name}-${i}`} prospect={p} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} />
+                ))}
               </div>
             </div>
-          )}
-          {bGrade.length > 0 && (
-            <div>
-              <div style={{ marginBottom: 10, marginTop: 6 }}><Pill color={C.amber}>Grade B</Pill></div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {bGrade.map((p, i) => <LeadCard key={`${p.name}-${i}`} prospect={p} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} />)}
-              </div>
-            </div>
-          )}
+          ))}
         </>
+      )}
+
+      {!loading && prospects.length === 0 && niche && !error && (
+        <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No results yet — hit Search to pull real businesses from Google Maps.</p></Card>
       )}
     </div>
   );
