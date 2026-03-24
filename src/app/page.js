@@ -174,9 +174,14 @@ function Field({ value, onChange, placeholder, rows, onKeyDown }) {
     : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} onKeyDown={onKeyDown} style={shared} />;
 }
 
-function CopyBtn({ text, label = "Copy", sm }) {
+function CopyBtn({ text, label = "Copy", sm, onCopy }) {
   const [copied, setCopied] = useState(false);
-  function copy() { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+  function copy() {
+    navigator.clipboard?.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    if (onCopy) onCopy();
+  }
   return <Btn onClick={copy} color={copied ? C.green : C.muted} sm={sm}>{copied ? "Copied" : label}</Btn>;
 }
 
@@ -474,6 +479,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline }) {
     setSending(false);
     if (result.success) {
       setShowSend(false);
+      logOutreach("emails");
       onAdd({ ...prospect, status: "contacted" });
     }
   }
@@ -515,7 +521,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <Label>IG DM</Label>
               <div style={{ display: "flex", gap: 6 }}>
-                <CopyBtn text={draft.dm} label="Copy DM" sm />
+                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={() => logOutreach("dms")} />
                 {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>Open IG</a>}
               </div>
             </div>
@@ -723,25 +729,104 @@ function OutreachModule({ state, setState, pipeline }) {
   );
 }
 
+// ─── FOLLOW-UP HELPERS ────────────────────────────────────────────────────────
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const diff = Date.now() - new Date(dateStr).getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
+function followUpStatus(lead) {
+  if (!["contacted", "followup"].includes(lead.status)) return null;
+  const days = daysSince(lead.contactedAt || lead.addedAt);
+  if (days === null) return null;
+  if (lead.status === "contacted" && days >= 4)  return { label: `${days}d — Follow-up due`, color: C.amber, urgent: true };
+  if (lead.status === "followup"  && days >= 4)  return { label: `${days}d — Second bump due`, color: C.red, urgent: true };
+  if (lead.status === "contacted" && days >= 2)  return { label: `${days}d — Sent`, color: C.blue, urgent: false };
+  return { label: `${days}d since contact`, color: C.muted, urgent: false };
+}
+
+// ─── OUTREACH LOG HELPERS ─────────────────────────────────────────────────────
+function getTodayKey() {
+  return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+}
+
+function getOutreachLog() {
+  try { return JSON.parse(localStorage.getItem("rws_outreach_log") || "{}"); } catch { return {}; }
+}
+
+function logOutreach(type) {
+  const log = getOutreachLog();
+  const key = getTodayKey();
+  if (!log[key]) log[key] = { dms: 0, emails: 0 };
+  log[key][type]++;
+  // Keep last 30 days only
+  const keys = Object.keys(log).sort().slice(-30);
+  const trimmed = {};
+  keys.forEach(k => { trimmed[k] = log[k]; });
+  localStorage.setItem("rws_outreach_log", JSON.stringify(trimmed));
+}
+
+function getWeekLog() {
+  const log = getOutreachLog();
+  let dms = 0, emails = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toLocaleDateString("en-CA");
+    if (log[key]) { dms += log[key].dms || 0; emails += log[key].emails || 0; }
+  }
+  return { dms, emails, today: log[getTodayKey()] || { dms: 0, emails: 0 } };
+}
+
 // ─── PIPELINE MODULE ──────────────────────────────────────────────────────────
-function PipelineModule({ pipeline, onUpdate, onRemove }) {
+function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
   const [filter,  setFilter]  = useState("all");
   const [notes,   setNotes]   = useState({});
   const [editing, setEditing] = useState(null);
+  const [weekLog, setWeekLog] = useState(() => getWeekLog());
+
+  const today     = new Date().toLocaleDateString();
+  const active    = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
+  const closed    = pipeline.filter(l => l.status === "closed").length;
+  const contacted = pipeline.filter(l => l.status !== "new").length;
+
+  // Follow-up due today
+  const followUps = pipeline.filter(l => {
+    const fu = followUpStatus(l);
+    return fu?.urgent;
+  });
 
   const visible = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
-  const active  = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
-  const closed  = pipeline.filter(l => l.status === "closed").length;
-  const contacted = pipeline.filter(l => l.status !== "new").length;
+
+  function handleStatusChange(id, newStatus) {
+    const patch = { status: newStatus };
+    if (newStatus === "contacted" || newStatus === "followup") {
+      patch.contactedAt = new Date().toISOString();
+    }
+    onUpdate(id, patch);
+  }
+
+  function handleLogDM() {
+    logOutreach("dms");
+    setWeekLog(getWeekLog());
+  }
+
+  function handleLogEmail() {
+    logOutreach("emails");
+    setWeekLog(getWeekLog());
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
         {[
-          { label: "Total",      val: pipeline.length, color: C.sub    },
-          { label: "Active",     val: active,          color: C.green  },
-          { label: "Contacted",  val: contacted,       color: C.blue   },
-          { label: "Closed",     val: closed,          color: C.purple },
+          { label: "Total",     val: pipeline.length, color: C.sub    },
+          { label: "Active",    val: active,          color: C.green  },
+          { label: "Contacted", val: contacted,       color: C.blue   },
+          { label: "Closed",    val: closed,          color: C.purple },
         ].map(s => (
           <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
             <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 500, color: s.color, marginBottom: 3 }}>{s.val}</div>
@@ -750,6 +835,66 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
         ))}
       </div>
 
+      {/* Outreach log */}
+      <Card style={{ padding: "16px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <Label>Outreach Log</Label>
+            <div style={{ display: "flex", gap: 20 }}>
+              <div>
+                <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: C.purple }}>{weekLog.today.dms}</span>
+                <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: 6 }}>DMs today</span>
+              </div>
+              <div>
+                <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: C.green }}>{weekLog.today.emails}</span>
+                <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: 6 }}>Emails today</span>
+              </div>
+              <div>
+                <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: C.blue }}>{weekLog.dms + weekLog.emails}</span>
+                <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: 6 }}>Total this week</span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn onClick={handleLogDM} color={C.purple} sm>+ DM Sent</Btn>
+            <Btn onClick={handleLogEmail} color={C.green} sm>+ Email Sent</Btn>
+          </div>
+        </div>
+      </Card>
+
+      {/* Follow-up due */}
+      {followUps.length > 0 && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <Dot color={C.red} pulse />
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.red, letterSpacing: "0.12em", textTransform: "uppercase" }}>Follow-up Due ({followUps.length})</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {followUps.map(l => {
+              const fu = followUpStatus(l);
+              return (
+                <div key={l.id} style={{ background: `${C.red}08`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                      <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{l.name}</span>
+                      {l.instagram && <a href={l.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{l.instagramHandle || "IG"}</a>}
+                      {l.phone && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{l.phone}</span>}
+                    </div>
+                    <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Btn sm color={C.amber} onClick={() => handleStatusChange(l.id, "followup")}>Mark Follow-up Sent</Btn>
+                    <Btn sm color={C.green}  onClick={() => handleStatusChange(l.id, "warm")}>Mark Warm</Btn>
+                    <Btn sm color={C.red}    onClick={() => handleStatusChange(l.id, "cold")}>Mark Cold</Btn>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Filter tabs */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {[{ id: "all", label: `All (${pipeline.length})` }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: `${s.label} (${pipeline.filter(l => l.status === id).length})` }))].map(f => (
           <button key={f.id} onClick={() => setFilter(f.id)}
@@ -759,15 +904,17 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
         ))}
       </div>
 
+      {/* Lead cards */}
       {pipeline.length === 0
         ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet — search in Leads tab and hit + Pipeline</p></Card>
         : visible.length === 0
           ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
           : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {visible.map(l => {
-                const s = STATUS[l.status];
+                const s  = STATUS[l.status];
+                const fu = followUpStatus(l);
                 return (
-                  <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "15px 18px" }}>
+                  <div key={l.id} style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : C.border2}`, borderRadius: 10, padding: "15px 18px" }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
                       <div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
@@ -782,14 +929,18 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
                           {l.mapsUrl && <a href={l.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>}
                           {l.instagram && <a href={l.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{l.instagramHandle || "Instagram"}</a>}
                         </div>
-                        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, margin: "4px 0 0" }}>Added {l.addedAt}</p>
+                        <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+                          <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Added {l.addedAt}</span>
+                          {l.contactedAt && <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue }}>Contacted {new Date(l.contactedAt).toLocaleDateString()}</span>}
+                          {fu && <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>}
+                        </div>
                       </div>
                       <Pill color={s.color}>{s.label}</Pill>
                     </div>
 
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
                       {Object.entries(STATUS).map(([id, st]) => (
-                        <button key={id} onClick={() => onUpdate(l.id, { status: id })}
+                        <button key={id} onClick={() => handleStatusChange(l.id, id)}
                           style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: l.status === id ? `${st.color}18` : "transparent", border: `1px solid ${l.status === id ? st.color : C.border}`, color: l.status === id ? st.color : C.muted }}>
                           {st.label}
                         </button>
@@ -881,13 +1032,14 @@ function CommandCenter({ prepData }) {
 
   const pipelineNames  = new Set(pipeline.map(l => l.name));
   const activePipeline = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
+  const followUpDue    = pipeline.filter(l => followUpStatus(l)?.urgent).length;
 
   const tabs = [
     { id: "email",    label: "Email",    dot: C.green  },
     { id: "calendar", label: "Calendar", dot: C.blue   },
     { id: "leads",    label: "Leads",    dot: C.amber  },
     { id: "outreach", label: "Outreach", dot: C.purple },
-    { id: "pipeline", label: "Pipeline", dot: C.green, badge: activePipeline || null },
+    { id: "pipeline", label: "Pipeline", dot: followUpDue > 0 ? C.red : C.green, badge: followUpDue > 0 ? `${followUpDue} due` : (activePipeline || null) },
   ];
 
   return (
