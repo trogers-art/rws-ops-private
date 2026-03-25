@@ -433,96 +433,93 @@ function CalendarModule({ state, setState }) {
   );
 }
 
-// ─── LEAD CARD ────────────────────────────────────────────────────────────────
-function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
-  const [prospect, setProspect]     = useState(initialProspect);
-  const [expanded, setExpanded]     = useState(false);
-  const [editing,  setEditing]      = useState(false);
-  const [draft,    setDraft]        = useState(null);
+// ─── SHARED: EDIT PANEL ───────────────────────────────────────────────────────
+function EditPanel({ data, onChange, onSave, onCancel }) {
+  return (
+    <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", background: "rgba(171,71,188,0.04)" }}>
+      <Label>Edit Lead Data</Label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+        <div>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Email</p>
+          <input value={data.email} onChange={e => onChange(d => ({ ...d, email: e.target.value }))} placeholder="owner@business.com"
+            style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
+        </div>
+        <div>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>IG Handle</p>
+          <input value={data.instagramHandle} onChange={e => {
+            const raw = e.target.value.replace(/^@/, "");
+            onChange(d => ({ ...d, instagramHandle: raw ? `@${raw}` : "", instagram: raw ? `https://www.instagram.com/${raw}/` : "" }));
+          }} placeholder="@handle"
+            style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
+        </div>
+        <div>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Website URL</p>
+          <input value={data.website} onChange={e => onChange(d => ({ ...d, website: e.target.value }))} placeholder="https://..."
+            style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
+        </div>
+        <div>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Website Type</p>
+          <select value={data.websiteType} onChange={e => onChange(d => ({ ...d, websiteType: e.target.value, hasWebsite: e.target.value !== "none" && e.target.value !== "" }))}
+            style={{ width: "100%", boxSizing: "border-box", background: "#0d0f14", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }}>
+            <option value="">None / Unknown</option>
+            <option value="none">No website</option>
+            <option value="link_in_bio">Link-in-bio (campsite, linktree, etc)</option>
+            <option value="real">Real website</option>
+            <option value="weak">Weak DIY site (Wix, GoDaddy, etc)</option>
+          </select>
+        </div>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Notes (Claude uses these when writing copy)</p>
+        <textarea value={data.notes} onChange={e => onChange(d => ({ ...d, notes: e.target.value }))}
+          placeholder="e.g. Uses campsite.bio — active on IG, lots of reels, no real site" rows={2}
+          style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none", resize: "vertical" }} />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={onSave} color={C.green} sm>Save Changes</Btn>
+        <Btn onClick={onCancel} color={C.muted} sm>Cancel</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ─── SHARED: COPY PANEL ───────────────────────────────────────────────────────
+function CopyPanel({ prospect, onSend }) {
+  const [draft,      setDraft]      = useState(null);
   const [generating, setGenerating] = useState(false);
-  const [enriching,  setEnriching]  = useState(false);
   const [sending,    setSending]    = useState(false);
   const [sendResult, setSendResult] = useState(null);
   const [showSend,   setShowSend]   = useState(false);
-  const [dismissed,  setDismissed]  = useState(false);
+  const [expanded,   setExpanded]   = useState(false);
 
-  // Edit fields
-  const [editData, setEditData] = useState({
-    email:       prospect.email || "",
-    instagram:   prospect.instagram || "",
-    instagramHandle: prospect.instagramHandle || "",
-    website:     prospect.website || "",
-    hasWebsite:  prospect.hasWebsite ?? false,
-    websiteType: prospect.websiteType || "",
-    notes:       prospect.notes || "",
-  });
+  // Reset draft when prospect data meaningfully changes
+  useEffect(() => {
+    setDraft(null);
+    setExpanded(false);
+  }, [prospect.name, prospect.email, prospect.instagram, prospect.websiteType, prospect.notes]);
 
-  const gc = GRADE_COLOR[prospect.grade] || C.muted;
-  const isEnriched = prospect.enriched || prospect.email || prospect.instagram;
-  // Auto-populate recipient from lead email
-  const recipientEmail = prospect.email || "";
-
-  async function handleEnrich() {
-    setEnriching(true);
-    const result = await enrichLead(prospect);
-    const updated = { ...prospect, ...result };
-    setProspect(updated);
-    setEditData(d => ({
-      ...d,
-      email:       result.email || d.email,
-      instagram:   result.instagram || d.instagram,
-      instagramHandle: result.instagramHandle || d.instagramHandle,
-      websiteType: result.websiteType || d.websiteType,
-    }));
-    setEnriching(false);
-  }
-
-  function saveEdit() {
-    const updated = {
-      ...prospect,
-      email:       editData.email.trim() || null,
-      instagram:   editData.instagram.trim() || null,
-      instagramHandle: editData.instagramHandle.trim() || null,
-      website:     editData.website.trim() || null,
-      hasWebsite:  editData.hasWebsite,
-      websiteType: editData.websiteType,
-      notes:       editData.notes.trim(),
-      enriched:    !!(editData.email || editData.instagram),
-      manuallyEdited: true,
-    };
-    setProspect(updated);
-    setDraft(null); // clear old copy — needs regenerating with new data
-    setEditing(false);
-  }
-
-  async function handleDismiss() {
-    setDismissed(true);
-    onDismiss(prospect.name);
-  }
-
-  async function generateCopy() {
+  async function generate() {
     if (draft) { setExpanded(e => !e); return; }
     setGenerating(true);
 
-    // Build accurate website context
-    const websiteContext = prospect.hasWebsite
+    const websiteCtx = prospect.hasWebsite
       ? prospect.websiteType === "link_in_bio"
-        ? `Has a link-in-bio page (${prospect.website}) instead of a real website`
-        : `Has website: ${prospect.website}`
+        ? `Has a link-in-bio page (${prospect.website}) — NOT a real website`
+        : prospect.websiteType === "weak"
+          ? `Has a weak DIY website (${prospect.website}) — outdated or builder-made`
+          : `Has website: ${prospect.website}`
       : "No website";
 
     const contactInfo = [
-      prospect.email    ? `Email: ${prospect.email}` : null,
-      prospect.instagram ? `Instagram: ${prospect.instagram} (${prospect.instagramHandle})` : null,
-      prospect.phone    ? `Phone: ${prospect.phone}` : null,
+      prospect.email       ? `Email: ${prospect.email}` : null,
+      prospect.instagram   ? `Instagram: ${prospect.instagram} (${prospect.instagramHandle})` : null,
+      prospect.phone       ? `Phone: ${prospect.phone}` : null,
     ].filter(Boolean).join(" | ");
-
-    const notes = prospect.notes ? `Additional context: ${prospect.notes}` : "";
 
     const raw = await ai(
       RWS_CTX + `\n\nWrite an IG DM and cold email for this REAL business. Return ONLY valid JSON, no backticks:
-{"dm":"3-4 sentences. Instagram DM. Reference real rating and review count. Be accurate about their web presence — if they have a link-in-bio, mention that specifically instead of saying they have no website. End with rogers-websolutions.com/book link. Human voice.","emailSubject":"Subject line using their real data","emailBody":"Cold email. First line hooks with real numbers. Accurately addresses their web presence gap. 3-4 short paragraphs. Close with rogers-websolutions.com/book. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
-      `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating} stars | Reviews: ${prospect.reviews} | ${websiteContext} | ${contactInfo} | ${notes}`
+{"dm":"3-4 sentences. Casual Instagram DM. Reference real rating and review count. Be precise about web presence — if link-in-bio say that, if weak site say that, if no site say that. Close with rogers-websolutions.com/book. Sound like a real person.","emailSubject":"Subject using their real data points","emailBody":"Cold email. Open with their real numbers. Address the exact web presence gap accurately. 3-4 short paragraphs. Close: rogers-websolutions.com/book. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+      `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}★ | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
     );
     try { setDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
     catch { setDraft({ dm: raw, emailSubject: `${prospect.name} — ${prospect.reviews} reviews`, emailBody: raw }); }
@@ -531,28 +528,129 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   }
 
   async function handleSend() {
-    const to = recipientEmail || prospect.email;
-    if (!to || !draft) return;
+    if (!prospect.email || !draft) return;
     setSending(true); setSendResult(null);
-    const result = await sendEmail(to, draft.emailSubject, draft.emailBody);
+    const result = await sendEmail(prospect.email, draft.emailSubject, draft.emailBody);
     setSendResult(result.success ? "sent" : "error");
     setSending(false);
     if (result.success) {
-      setShowSend(false);
       logOutreach("emails");
-      onAdd({ ...prospect, status: "contacted" });
+      if (onSend) onSend();
     }
   }
 
-  if (dismissed) return null;
+  return (
+    <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px" }}>
+      <div style={{ marginBottom: expanded && draft ? 14 : 0 }}>
+        <Btn onClick={generate} loading={generating} color={C.amber} sm>
+          {draft ? (expanded ? "Hide Copy" : "Show Copy") : "Get Copy"}
+        </Btn>
+      </div>
+
+      {expanded && draft && (
+        <>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Label>IG DM</Label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={() => logOutreach("dms")} />
+                {prospect.instagram && (
+                  <a href={prospect.instagram} target="_blank" rel="noreferrer"
+                    style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>
+                    Open IG
+                  </a>
+                )}
+              </div>
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
+          </div>
+
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Label>Cold Email</Label>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
+                {prospect.email
+                  ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Hide" : "Send via Gmail"}</Btn>
+                  : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email in Edit to send</span>
+                }
+              </div>
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
+
+            {showSend && prospect.email && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
+                  <Dot color={C.green} size={5} />
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>To: {prospect.email}</span>
+                </div>
+                <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
+              </div>
+            )}
+            {sendResult === "sent"  && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
+            {sendResult === "error" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red,   margin: "8px 0 0" }}>Send failed — check Gmail auth</p>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── LEAD CARD (Leads tab — triage only, no copy) ─────────────────────────────
+function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
+  const [prospect,  setProspect]  = useState(initialProspect);
+  const [editing,   setEditing]   = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [editData,  setEditData]  = useState({
+    email:           prospect.email || "",
+    instagram:       prospect.instagram || "",
+    instagramHandle: prospect.instagramHandle || "",
+    website:         prospect.website || "",
+    hasWebsite:      prospect.hasWebsite ?? false,
+    websiteType:     prospect.websiteType || "",
+    notes:           prospect.notes || "",
+  });
+
+  const gc         = GRADE_COLOR[prospect.grade] || C.muted;
+  const isEnriched = !!(prospect.email || prospect.instagram);
+
+  async function handleEnrich() {
+    setEnriching(true);
+    const result = await enrichLead(prospect);
+    const updated = { ...prospect, ...result };
+    setProspect(updated);
+    setEditData(d => ({
+      ...d,
+      email:           result.email || d.email,
+      instagram:       result.instagram || d.instagram,
+      instagramHandle: result.instagramHandle || d.instagramHandle,
+      websiteType:     result.websiteType || d.websiteType,
+    }));
+    setEnriching(false);
+  }
+
+  function saveEdit() {
+    setProspect(p => ({
+      ...p,
+      email:           editData.email.trim() || null,
+      instagram:       editData.instagram.trim() || null,
+      instagramHandle: editData.instagramHandle.trim() || null,
+      website:         editData.website.trim() || null,
+      hasWebsite:      editData.hasWebsite,
+      websiteType:     editData.websiteType,
+      notes:           editData.notes.trim(),
+      enriched:        !!(editData.email || editData.instagram),
+      manuallyEdited:  true,
+    }));
+    setEditing(false);
+  }
 
   return (
     <div style={{ background: C.cardHi, borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-
-      {/* Main header */}
-      <div style={{ padding: "14px 16px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
+      <div style={{ padding: "13px 16px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4, flexWrap: "wrap" }}>
             <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 700, color: C.text }}>{prospect.name}</span>
             <Pill color={gc} sm>Grade {prospect.grade}</Pill>
             {prospect.websiteType === "link_in_bio" && <Pill color={C.amber} sm>Link-in-bio</Pill>}
@@ -560,128 +658,152 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
             {isEnriched && <Pill color={C.blue} sm>Enriched</Pill>}
             {prospect.manuallyEdited && <Pill color={C.purple} sm>Edited</Pill>}
           </div>
-          <p style={{ fontFamily: MONO, fontSize: 11, color: C.muted, margin: "0 0 5px" }}>{prospect.address}</p>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 4 }}>
-            {prospect.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>★ {prospect.rating} ({prospect.reviews} reviews)</span>}
+          <p style={{ fontFamily: MONO, fontSize: 11, color: C.muted, margin: "0 0 4px" }}>{prospect.address}</p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 3 }}>
+            {prospect.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>★ {prospect.rating} ({prospect.reviews})</span>}
             {prospect.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{prospect.phone}</span>}
-          </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <a href={prospect.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>
             {prospect.website && <a href={prospect.website} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textDecoration: "none" }}>{prospect.websiteType === "link_in_bio" ? "Link-in-bio" : "Website"}</a>}
             {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{prospect.instagramHandle || "Instagram"}</a>}
             {prospect.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{prospect.email}</span>}
           </div>
-          {prospect.notes && <p style={{ fontFamily: MONO, fontSize: 10, color: C.sub, margin: "5px 0 0", fontStyle: "italic" }}>{prospect.notes}</p>}
-          <p style={{ fontFamily: MONO, fontSize: 10, color: gc, margin: "5px 0 0" }}>{prospect.gradeReason}</p>
+          {prospect.notes && <p style={{ fontFamily: MONO, fontSize: 10, color: C.sub, margin: "3px 0 0", fontStyle: "italic" }}>{prospect.notes}</p>}
+          <p style={{ fontFamily: MONO, fontSize: 10, color: gc, margin: "3px 0 0" }}>{prospect.gradeReason}</p>
         </div>
-
-        {/* Action buttons */}
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <Btn onClick={() => onAdd(prospect)} disabled={inPipeline} color={inPipeline ? C.purple : C.green} sm>{inPipeline ? "Added" : "+ Pipeline"}</Btn>
-          {!isEnriched && <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>Enrich</Btn>}
-          {isEnriched && <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>Re-enrich</Btn>}
-          <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel Edit" : "Edit"}</Btn>
-          <Btn onClick={generateCopy} loading={generating} color={C.amber} sm>{draft ? (expanded ? "Hide" : "Show Copy") : "Get Copy"}</Btn>
-          <Btn onClick={handleDismiss} color={C.red} sm>Not a Fit</Btn>
+          <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>{isEnriched ? "Re-enrich" : "Enrich"}</Btn>
+          <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel" : "Edit"}</Btn>
+          <Btn onClick={() => onDismiss(prospect.name)} color={C.red} sm>Not a Fit</Btn>
+        </div>
+      </div>
+      {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
+    </div>
+  );
+}
+
+// ─── PIPELINE CARD (Pipeline tab — full workflow) ─────────────────────────────
+function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
+  const [editing,   setEditing]   = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [editData,  setEditData]  = useState({
+    email:           lead.email || "",
+    instagram:       lead.instagram || "",
+    instagramHandle: lead.instagramHandle || "",
+    website:         lead.website || "",
+    hasWebsite:      lead.hasWebsite ?? false,
+    websiteType:     lead.websiteType || "",
+    notes:           lead.notes || "",
+  });
+
+  useEffect(() => {
+    setEditData({
+      email:           lead.email || "",
+      instagram:       lead.instagram || "",
+      instagramHandle: lead.instagramHandle || "",
+      website:         lead.website || "",
+      hasWebsite:      lead.hasWebsite ?? false,
+      websiteType:     lead.websiteType || "",
+      notes:           lead.notes || "",
+    });
+  }, [lead.id]);
+
+  const s  = STATUS[lead.status];
+  const fu = followUpStatus(lead);
+  const gc = GRADE_COLOR[lead.grade] || C.muted;
+
+  // Live prospect data merging editData for CopyPanel
+  const liveLead = {
+    ...lead,
+    email:           editData.email.trim() || lead.email || null,
+    instagram:       editData.instagram.trim() || lead.instagram || null,
+    instagramHandle: editData.instagramHandle.trim() || lead.instagramHandle || null,
+    notes:           editData.notes.trim() || lead.notes || null,
+    websiteType:     editData.websiteType || lead.websiteType || null,
+    hasWebsite:      editData.hasWebsite ?? lead.hasWebsite,
+  };
+
+  async function handleEnrich() {
+    setEnriching(true);
+    const result = await enrichLead(lead);
+    const patch = {
+      email:           result.email || lead.email,
+      instagram:       result.instagram || lead.instagram,
+      instagramHandle: result.instagramHandle || lead.instagramHandle,
+      websiteType:     result.websiteType || lead.websiteType,
+      enriched:        true,
+    };
+    onUpdate(lead.id, patch);
+    setEditData(d => ({ ...d, ...patch }));
+    setEnriching(false);
+  }
+
+  function saveEdit() {
+    const patch = {
+      email:           editData.email.trim() || null,
+      instagram:       editData.instagram.trim() || null,
+      instagramHandle: editData.instagramHandle.trim() || null,
+      website:         editData.website.trim() || null,
+      hasWebsite:      editData.hasWebsite,
+      websiteType:     editData.websiteType,
+      notes:           editData.notes.trim(),
+      enriched:        !!(editData.email || editData.instagram),
+      manuallyEdited:  true,
+    };
+    onUpdate(lead.id, patch);
+    setEditing(false);
+  }
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : C.border2}`, borderRadius: 10, overflow: "hidden" }}>
+
+      {/* Header */}
+      <div style={{ padding: "14px 18px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 600, color: C.text }}>{lead.name}</span>
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{lead.city}</span>
+            {lead.grade && <Pill color={gc} sm>Grade {lead.grade}</Pill>}
+            {lead.websiteType === "link_in_bio" && <Pill color={C.amber} sm>Link-in-bio</Pill>}
+            {lead.manuallyEdited && <Pill color={C.purple} sm>Edited</Pill>}
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 3 }}>
+            {lead.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>★ {lead.rating} ({lead.reviews} reviews)</span>}
+            {lead.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{lead.phone}</span>}
+            {lead.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{lead.email}</span>}
+            {lead.mapsUrl && <a href={lead.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>}
+            {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || "Instagram"}</a>}
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 3, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Added {lead.addedAt}</span>
+            {lead.contactedAt && <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue }}>Contacted {new Date(lead.contactedAt).toLocaleDateString()}</span>}
+            {fu && <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>}
+          </div>
+          {lead.notes && <p style={{ fontFamily: MONO, fontSize: 10, color: C.sub, margin: "4px 0 0", fontStyle: "italic" }}>{lead.notes}</p>}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-end" }}>
+          <Pill color={s.color}>{s.label}</Pill>
+          <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>{lead.enriched ? "Re-enrich" : "Enrich"}</Btn>
+          <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel" : "Edit"}</Btn>
+          <Btn onClick={() => onRemove(lead.id)} color={C.red} sm>Remove</Btn>
         </div>
       </div>
 
+      {/* Status buttons */}
+      <div style={{ padding: "0 18px 12px", display: "flex", flexWrap: "wrap", gap: 5 }}>
+        {Object.entries(STATUS).map(([id, st]) => (
+          <button key={id} onClick={() => onStatusChange(lead.id, id)}
+            style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === id ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === id ? st.color : C.border}`, color: lead.status === id ? st.color : C.muted }}>
+            {st.label}
+          </button>
+        ))}
+      </div>
+
       {/* Edit panel */}
-      {editing && (
-        <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", background: "rgba(171,71,188,0.04)" }}>
-          <Label>Edit Lead Data</Label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-            <div>
-              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Email</p>
-              <input value={editData.email} onChange={e => setEditData(d => ({ ...d, email: e.target.value }))} placeholder="owner@business.com"
-                style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
-            </div>
-            <div>
-              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>IG Handle</p>
-              <input value={editData.instagramHandle} onChange={e => {
-                const h = e.target.value.startsWith("@") ? e.target.value : `@${e.target.value}`;
-                const slug = e.target.value.replace(/^@/, "");
-                setEditData(d => ({ ...d, instagramHandle: h, instagram: slug ? `https://www.instagram.com/${slug}/` : "" }));
-              }} placeholder="@handle"
-                style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
-            </div>
-            <div>
-              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Website URL</p>
-              <input value={editData.website} onChange={e => setEditData(d => ({ ...d, website: e.target.value }))} placeholder="https://..."
-                style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
-            </div>
-            <div>
-              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Website Type</p>
-              <select value={editData.websiteType} onChange={e => {
-                const wt = e.target.value;
-                setEditData(d => ({ ...d, websiteType: wt, hasWebsite: wt !== "none" }));
-              }}
-                style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }}>
-                <option value="">None / Unknown</option>
-                <option value="none">No website</option>
-                <option value="link_in_bio">Link-in-bio (campsite, linktree, etc)</option>
-                <option value="real">Real website</option>
-                <option value="weak">Weak DIY site (Wix, GoDaddy, etc)</option>
-              </select>
-            </div>
-          </div>
-          <div style={{ marginBottom: 10 }}>
-            <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Notes (visible to Claude when generating copy)</p>
-            <textarea value={editData.notes} onChange={e => setEditData(d => ({ ...d, notes: e.target.value }))} placeholder="e.g. They use campsite.bio — has a booking link but no real site. Lots of reels, very active on IG." rows={2}
-              style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none", resize: "vertical" }} />
-          </div>
-          <Btn onClick={saveEdit} color={C.green} sm>Save Changes</Btn>
-        </div>
-      )}
+      {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
 
-      {/* Copy section */}
-      {expanded && draft && (
-        <div style={{ borderTop: `1px solid ${C.border}`, padding: "16px" }}>
-          {/* IG DM */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <Label>IG DM</Label>
-              <div style={{ display: "flex", gap: 6 }}>
-                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={() => logOutreach("dms")} />
-                {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>Open IG</a>}
-              </div>
-            </div>
-            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
-          </div>
-
-          {/* Cold Email */}
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <Label>Cold Email</Label>
-              <div style={{ display: "flex", gap: 6 }}>
-                <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
-                {prospect.email && (
-                  <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>
-                    {showSend ? "Hide" : "Send via Gmail"}
-                  </Btn>
-                )}
-                {!prospect.email && (
-                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email in Edit to send</span>
-                )}
-              </div>
-            </div>
-            <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
-            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
-
-            {showSend && prospect.email && (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
-                  <Dot color={C.green} size={5} />
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>Sending to: {prospect.email}</span>
-                </div>
-                <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
-              </div>
-            )}
-            {sendResult === "sent"  && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent — lead moved to Contacted</p>}
-            {sendResult === "error" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed — check Gmail auth</p>}
-          </div>
-        </div>
-      )}
+      {/* Copy panel — always available in Pipeline */}
+      <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} />
     </div>
   );
 }
@@ -953,8 +1075,6 @@ function getWeekLog() {
 // ─── PIPELINE MODULE ──────────────────────────────────────────────────────────
 function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
   const [filter,  setFilter]  = useState("all");
-  const [notes,   setNotes]   = useState({});
-  const [editing, setEditing] = useState(null);
   const [weekLog, setWeekLog] = useState(() => getWeekLog());
 
   const today     = new Date().toLocaleDateString();
@@ -1081,62 +1201,15 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
         : visible.length === 0
           ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
           : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {visible.map(l => {
-                const s  = STATUS[l.status];
-                const fu = followUpStatus(l);
-                return (
-                  <div key={l.id} style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : C.border2}`, borderRadius: 10, padding: "15px 18px" }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-                          <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 600, color: C.text }}>{l.name}</span>
-                          <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{l.city}</span>
-                          {l.grade && <Pill color={GRADE_COLOR[l.grade] || C.muted} sm>Grade {l.grade}</Pill>}
-                        </div>
-                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                          {l.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>★ {l.rating} ({l.reviews} reviews)</span>}
-                          {l.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{l.phone}</span>}
-                          {l.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{l.email}</span>}
-                          {l.mapsUrl && <a href={l.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>}
-                          {l.instagram && <a href={l.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{l.instagramHandle || "Instagram"}</a>}
-                        </div>
-                        <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
-                          <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Added {l.addedAt}</span>
-                          {l.contactedAt && <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue }}>Contacted {new Date(l.contactedAt).toLocaleDateString()}</span>}
-                          {fu && <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>}
-                        </div>
-                      </div>
-                      <Pill color={s.color}>{s.label}</Pill>
-                    </div>
-
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
-                      {Object.entries(STATUS).map(([id, st]) => (
-                        <button key={id} onClick={() => handleStatusChange(l.id, id)}
-                          style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: l.status === id ? `${st.color}18` : "transparent", border: `1px solid ${l.status === id ? st.color : C.border}`, color: l.status === id ? st.color : C.muted }}>
-                          {st.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {editing === l.id
-                      ? <div style={{ display: "flex", gap: 6 }}>
-                          <Field value={notes[l.id] ?? l.notes ?? ""} onChange={v => setNotes(p => ({ ...p, [l.id]: v }))} placeholder="Add notes..." rows={2} />
-                          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                            <Btn sm color={C.green} onClick={() => { onUpdate(l.id, { notes: notes[l.id] ?? "" }); setEditing(null); }}>Save</Btn>
-                            <Btn sm color={C.muted} onClick={() => setEditing(null)}>Cancel</Btn>
-                          </div>
-                        </div>
-                      : <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <span style={{ fontFamily: MONO, fontSize: 11, color: l.notes ? C.sub : "rgba(255,255,255,0.15)" }}>{l.notes || "No notes"}</span>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <Btn sm color={C.blue} onClick={() => { setNotes(p => ({ ...p, [l.id]: l.notes ?? "" })); setEditing(l.id); }}>Notes</Btn>
-                            <Btn sm color={C.red} onClick={() => onRemove(l.id)}>Remove</Btn>
-                          </div>
-                        </div>
-                    }
-                  </div>
-                );
-              })}
+              {visible.map(l => (
+                <PipelineCard
+                  key={l.id}
+                  lead={l}
+                  onUpdate={onUpdate}
+                  onRemove={onRemove}
+                  onStatusChange={handleStatusChange}
+                />
+              ))}
             </div>
       }
     </div>
