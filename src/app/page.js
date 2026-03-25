@@ -115,7 +115,6 @@ async function sendEmail(to, subject, body) {
   return res.json();
 }
 
-// Pipeline persistence — sends server-side PIN header
 async function loadPipeline() {
   try {
     const res = await fetch("/api/pipeline", {
@@ -252,7 +251,6 @@ function LoginScreen({ onEnter, onPrepReady }) {
       try {
         const data = await fetchLeads(todayNiche);
         const prospects = (data.prospects || []).filter(p => !p.hasWebsite).slice(0, 6);
-        // Enrich top A-grade leads on login
         const enriched = await Promise.all(
           prospects.filter(p => p.grade === "A").slice(0, 3).map(async p => {
             const enrichment = await enrichLead(p);
@@ -499,7 +497,6 @@ function CopyPanel({ prospect, onSend }) {
   const [showSend,   setShowSend]   = useState(false);
   const [expanded,   setExpanded]   = useState(false);
 
-  // Reset draft when prospect data meaningfully changes
   useEffect(() => {
     setDraft(null);
     setExpanded(false);
@@ -576,6 +573,7 @@ function CopyPanel({ prospect, onSend }) {
 
       {expanded && draft && (
         <>
+          {/* IG DM */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>IG DM</Label>
@@ -592,13 +590,14 @@ function CopyPanel({ prospect, onSend }) {
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
           </div>
 
+          {/* Cold Email */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Cold Email</Label>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
                 {prospect.email
-                  ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Hide" : "Send via Gmail"}</Btn>
+                  ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Cancel" : "Send via Gmail"}</Btn>
                   : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email in Edit to send</span>
                 }
               </div>
@@ -606,15 +605,44 @@ function CopyPanel({ prospect, onSend }) {
             <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
 
+            {/* Send form */}
             {showSend && prospect.email && (
               <div style={{ marginTop: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
+
+                {/* Subject preview — shows exactly what will land in their inbox */}
+                <div style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  padding: "8px 12px",
+                  background: "rgba(0,0,0,0.3)",
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 8,
+                  marginBottom: 8,
+                }}>
+                  <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", whiteSpace: "nowrap", paddingTop: 1 }}>SUBJECT</span>
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, lineHeight: 1.5, wordBreak: "break-word" }}>{draft.emailSubject}</span>
+                </div>
+
+                {/* To line */}
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 12px",
+                  background: `${C.green}08`,
+                  borderRadius: 8,
+                  border: `1px solid ${C.green}20`,
+                  marginBottom: 8,
+                }}>
                   <Dot color={C.green} size={5} />
                   <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>To: {prospect.email}</span>
                 </div>
+
                 <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
               </div>
             )}
+
             {sendResult === "sent"  && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
             {sendResult === "error" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red,   margin: "8px 0 0" }}>Send failed — check Gmail auth</p>}
           </div>
@@ -646,7 +674,6 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
     setEnriching(true);
     try {
       const result = await enrichLead(prospect);
-      // Only apply known safe fields — never spread unknown result data onto prospect
       if (result && !result.error) {
         setProspect(p => ({
           ...p,
@@ -753,7 +780,6 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
   const fu = followUpStatus(lead);
   const gc = GRADE_COLOR[lead.grade] || C.muted;
 
-  // Live prospect data merging editData for CopyPanel
   const liveLead = {
     ...lead,
     email:           editData.email.trim() || lead.email || null,
@@ -853,10 +879,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
         ))}
       </div>
 
-      {/* Edit panel */}
       {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
-
-      {/* Copy panel — always available in Pipeline */}
       <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} />
     </div>
   );
@@ -890,7 +913,6 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   const { niche = "", prospects = [], loading = false, error = "" } = state;
   const [dismissed, setDismissed] = useState(new Set());
 
-  // Load dismissed list on mount
   useEffect(() => {
     loadDismissed().then(setDismissed);
   }, []);
@@ -912,17 +934,15 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   function handleDismiss(name) {
     setDismissed(prev => new Set([...prev, name]));
     dismissLead(name);
-    // Also remove from prospects list
     setState(s => ({ ...s, prospects: s.prospects.filter(p => p.name !== name) }));
   }
 
-  // Filter out dismissed
   const visible = prospects.filter(p => !dismissed.has(p.name));
-  const aGrade = visible.filter(p => p.grade === "A");
-  const bGrade = visible.filter(p => p.grade === "B");
-  const cGrade = visible.filter(p => p.grade === "C");
-  const dGrade = visible.filter(p => p.grade === "D");
-  const noSite = visible.filter(p => !p.hasWebsite);
+  const aGrade  = visible.filter(p => p.grade === "A");
+  const bGrade  = visible.filter(p => p.grade === "B");
+  const cGrade  = visible.filter(p => p.grade === "C");
+  const dGrade  = visible.filter(p => p.grade === "D");
+  const noSite  = visible.filter(p => !p.hasWebsite);
 
   const gradeGroups = [
     { grade: "A", label: "Grade A — Perfect Fit",           color: C.green, items: aGrade },
@@ -956,14 +976,13 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
 
       {!loading && visible.length > 0 && (
         <>
-          {/* Stats bar */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
             {[
-              { label: "Total",    val: visible.length, color: C.sub   },
-              { label: "No Site",  val: noSite.length,  color: C.green },
-              { label: "Grade A",  val: aGrade.length,  color: C.green },
-              { label: "Grade B",  val: bGrade.length,  color: C.amber },
-              { label: "Grade C",  val: cGrade.length,  color: C.blue  },
+              { label: "Total",   val: visible.length, color: C.sub   },
+              { label: "No Site", val: noSite.length,  color: C.green },
+              { label: "Grade A", val: aGrade.length,  color: C.green },
+              { label: "Grade B", val: bGrade.length,  color: C.amber },
+              { label: "Grade C", val: cGrade.length,  color: C.blue  },
             ].map(s => (
               <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
                 <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: s.color, marginBottom: 2 }}>{s.val}</div>
@@ -972,7 +991,6 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
             ))}
           </div>
 
-          {/* All grade groups */}
           {gradeGroups.map(g => (
             <div key={g.grade}>
               <div style={{ marginBottom: 10 }}><Pill color={g.color}>{g.label}</Pill></div>
@@ -1095,7 +1113,7 @@ function followUpStatus(lead) {
 
 // ─── OUTREACH LOG HELPERS ─────────────────────────────────────────────────────
 function getTodayKey() {
-  return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+  return new Date().toLocaleDateString("en-CA");
 }
 
 function getOutreachLog() {
@@ -1107,7 +1125,6 @@ function logOutreach(type) {
   const key = getTodayKey();
   if (!log[key]) log[key] = { dms: 0, emails: 0 };
   log[key][type]++;
-  // Keep last 30 days only
   const keys = Object.keys(log).sort().slice(-30);
   const trimmed = {};
   keys.forEach(k => { trimmed[k] = log[k]; });
@@ -1131,12 +1148,10 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
   const [filter,  setFilter]  = useState("all");
   const [weekLog, setWeekLog] = useState(() => getWeekLog());
 
-  const today     = new Date().toLocaleDateString();
   const active    = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
   const closed    = pipeline.filter(l => l.status === "closed").length;
   const contacted = pipeline.filter(l => l.status !== "new").length;
 
-  // Follow-up due today
   const followUps = pipeline.filter(l => {
     const fu = followUpStatus(l);
     return fu?.urgent;
@@ -1165,7 +1180,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-      {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
         {[
           { label: "Total",     val: pipeline.length, color: C.sub    },
@@ -1180,7 +1194,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
         ))}
       </div>
 
-      {/* Outreach log */}
       <Card style={{ padding: "16px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
@@ -1207,7 +1220,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
         </div>
       </Card>
 
-      {/* Follow-up due */}
       {followUps.length > 0 && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -1239,7 +1251,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
         </div>
       )}
 
-      {/* Filter tabs */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {[{ id: "all", label: `All (${pipeline.length})` }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: `${s.label} (${pipeline.filter(l => l.status === id).length})` }))].map(f => (
           <button key={f.id} onClick={() => setFilter(f.id)}
@@ -1249,7 +1260,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
         ))}
       </div>
 
-      {/* Lead cards */}
       {pipeline.length === 0
         ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet — search in Leads tab and hit + Pipeline</p></Card>
         : visible.length === 0
@@ -1285,13 +1295,11 @@ function CommandCenter({ prepData }) {
   const [outreachState, setOutreachState] = useState({ type: "cold" });
   const [pipeline, setPipelineRaw] = useState([]);
 
-  // Load pipeline from server on mount
   useEffect(() => {
     loadPipeline().then(saved => {
       if (saved.length > 0) {
         setPipelineRaw(saved);
       } else if (prepData?.prospects?.length > 0) {
-        // Seed with today's Grade A leads if pipeline is empty
         const seeds = prepData.prospects
           .filter(p => p.grade === "A")
           .slice(0, 3)
@@ -1302,7 +1310,6 @@ function CommandCenter({ prepData }) {
     });
   }, []);
 
-  // Save pipeline to server whenever it changes (after initial load)
   useEffect(() => {
     if (pipelineLoaded && pipeline.length >= 0) {
       savePipeline(pipeline);
@@ -1374,7 +1381,6 @@ function CommandCenter({ prepData }) {
       </div>
 
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 24px" }}>
-        {/* All modules always mounted — tab switch never wipes state */}
         <div style={{ display: tab === "email"    ? "block" : "none" }}><EmailModule    state={emailState}    setState={setEmailState} /></div>
         <div style={{ display: tab === "calendar" ? "block" : "none" }}><CalendarModule state={calendarState} setState={setCalendarState} /></div>
         <div style={{ display: tab === "leads"    ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} /></div>
