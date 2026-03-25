@@ -434,52 +434,107 @@ function CalendarModule({ state, setState }) {
 }
 
 // ─── LEAD CARD ────────────────────────────────────────────────────────────────
-function LeadCard({ prospect: initialProspect, onAdd, inPipeline }) {
+function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   const [prospect, setProspect]     = useState(initialProspect);
   const [expanded, setExpanded]     = useState(false);
-  const [draft, setDraft]           = useState(null);
+  const [editing,  setEditing]      = useState(false);
+  const [draft,    setDraft]        = useState(null);
   const [generating, setGenerating] = useState(false);
-  const [enriching, setEnriching]   = useState(false);
-  const [sending, setSending]       = useState(false);
+  const [enriching,  setEnriching]  = useState(false);
+  const [sending,    setSending]    = useState(false);
   const [sendResult, setSendResult] = useState(null);
-  const [recipient, setRecipient]   = useState(prospect.email || "");
-  const [showSend, setShowSend]     = useState(false);
+  const [showSend,   setShowSend]   = useState(false);
+  const [dismissed,  setDismissed]  = useState(false);
+
+  // Edit fields
+  const [editData, setEditData] = useState({
+    email:       prospect.email || "",
+    instagram:   prospect.instagram || "",
+    instagramHandle: prospect.instagramHandle || "",
+    website:     prospect.website || "",
+    hasWebsite:  prospect.hasWebsite ?? false,
+    websiteType: prospect.websiteType || "",
+    notes:       prospect.notes || "",
+  });
 
   const gc = GRADE_COLOR[prospect.grade] || C.muted;
   const isEnriched = prospect.enriched || prospect.email || prospect.instagram;
+  // Auto-populate recipient from lead email
+  const recipientEmail = prospect.email || "";
 
   async function handleEnrich() {
     setEnriching(true);
     const result = await enrichLead(prospect);
-    setProspect(p => ({ ...p, ...result }));
-    if (result.email) setRecipient(result.email);
+    const updated = { ...prospect, ...result };
+    setProspect(updated);
+    setEditData(d => ({
+      ...d,
+      email:       result.email || d.email,
+      instagram:   result.instagram || d.instagram,
+      instagramHandle: result.instagramHandle || d.instagramHandle,
+      websiteType: result.websiteType || d.websiteType,
+    }));
     setEnriching(false);
+  }
+
+  function saveEdit() {
+    const updated = {
+      ...prospect,
+      email:       editData.email.trim() || null,
+      instagram:   editData.instagram.trim() || null,
+      instagramHandle: editData.instagramHandle.trim() || null,
+      website:     editData.website.trim() || null,
+      hasWebsite:  editData.hasWebsite,
+      websiteType: editData.websiteType,
+      notes:       editData.notes.trim(),
+      enriched:    !!(editData.email || editData.instagram),
+      manuallyEdited: true,
+    };
+    setProspect(updated);
+    setDraft(null); // clear old copy — needs regenerating with new data
+    setEditing(false);
+  }
+
+  async function handleDismiss() {
+    setDismissed(true);
+    onDismiss(prospect.name);
   }
 
   async function generateCopy() {
     if (draft) { setExpanded(e => !e); return; }
     setGenerating(true);
+
+    // Build accurate website context
+    const websiteContext = prospect.hasWebsite
+      ? prospect.websiteType === "link_in_bio"
+        ? `Has a link-in-bio page (${prospect.website}) instead of a real website`
+        : `Has website: ${prospect.website}`
+      : "No website";
+
     const contactInfo = [
-      prospect.email ? `Email: ${prospect.email}` : null,
-      prospect.instagram ? `Instagram: ${prospect.instagram}` : null,
-      prospect.phone ? `Phone: ${prospect.phone}` : null,
+      prospect.email    ? `Email: ${prospect.email}` : null,
+      prospect.instagram ? `Instagram: ${prospect.instagram} (${prospect.instagramHandle})` : null,
+      prospect.phone    ? `Phone: ${prospect.phone}` : null,
     ].filter(Boolean).join(" | ");
+
+    const notes = prospect.notes ? `Additional context: ${prospect.notes}` : "";
 
     const raw = await ai(
       RWS_CTX + `\n\nWrite an IG DM and cold email for this REAL business. Return ONLY valid JSON, no backticks:
-{"dm":"3-4 sentences. Instagram DM. Reference real rating and review count. Mention no website specifically. End with Calendly link. Human voice, not corporate.","emailSubject":"Subject line using their real data — rating, reviews, or category","emailBody":"Cold email. First line uses their real numbers to hook. Explains the website gap and what they're losing. 3-4 short paragraphs. Calendly close. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
-      `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating} stars | Reviews: ${prospect.reviews} | Has website: ${prospect.hasWebsite} | ${contactInfo}`
+{"dm":"3-4 sentences. Instagram DM. Reference real rating and review count. Be accurate about their web presence — if they have a link-in-bio, mention that specifically instead of saying they have no website. End with rogers-websolutions.com/book link. Human voice.","emailSubject":"Subject line using their real data","emailBody":"Cold email. First line hooks with real numbers. Accurately addresses their web presence gap. 3-4 short paragraphs. Close with rogers-websolutions.com/book. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+      `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating} stars | Reviews: ${prospect.reviews} | ${websiteContext} | ${contactInfo} | ${notes}`
     );
     try { setDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
-    catch { setDraft({ dm: raw, emailSubject: `${prospect.name} — ${prospect.reviews} reviews, no website`, emailBody: raw }); }
+    catch { setDraft({ dm: raw, emailSubject: `${prospect.name} — ${prospect.reviews} reviews`, emailBody: raw }); }
     setGenerating(false);
     setExpanded(true);
   }
 
   async function handleSend() {
-    if (!recipient.trim() || !draft) return;
+    const to = recipientEmail || prospect.email;
+    if (!to || !draft) return;
     setSending(true); setSendResult(null);
-    const result = await sendEmail(recipient, draft.emailSubject, draft.emailBody);
+    const result = await sendEmail(to, draft.emailSubject, draft.emailBody);
     setSendResult(result.success ? "sent" : "error");
     setSending(false);
     if (result.success) {
@@ -489,15 +544,21 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline }) {
     }
   }
 
+  if (dismissed) return null;
+
   return (
     <div style={{ background: C.cardHi, borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+
+      {/* Main header */}
       <div style={{ padding: "14px 16px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5, flexWrap: "wrap" }}>
             <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 700, color: C.text }}>{prospect.name}</span>
             <Pill color={gc} sm>Grade {prospect.grade}</Pill>
-            {!prospect.hasWebsite && <Pill color={C.green} sm>No website</Pill>}
+            {prospect.websiteType === "link_in_bio" && <Pill color={C.amber} sm>Link-in-bio</Pill>}
+            {!prospect.hasWebsite && prospect.websiteType !== "link_in_bio" && <Pill color={C.green} sm>No website</Pill>}
             {isEnriched && <Pill color={C.blue} sm>Enriched</Pill>}
+            {prospect.manuallyEdited && <Pill color={C.purple} sm>Edited</Pill>}
           </div>
           <p style={{ fontFamily: MONO, fontSize: 11, color: C.muted, margin: "0 0 5px" }}>{prospect.address}</p>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 4 }}>
@@ -506,19 +567,74 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline }) {
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <a href={prospect.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>
-            {prospect.website && <a href={prospect.website} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textDecoration: "none" }}>Website</a>}
+            {prospect.website && <a href={prospect.website} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textDecoration: "none" }}>{prospect.websiteType === "link_in_bio" ? "Link-in-bio" : "Website"}</a>}
             {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{prospect.instagramHandle || "Instagram"}</a>}
             {prospect.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{prospect.email}</span>}
           </div>
-          <p style={{ fontFamily: MONO, fontSize: 10, color: gc, margin: "6px 0 0" }}>{prospect.gradeReason}</p>
+          {prospect.notes && <p style={{ fontFamily: MONO, fontSize: 10, color: C.sub, margin: "5px 0 0", fontStyle: "italic" }}>{prospect.notes}</p>}
+          <p style={{ fontFamily: MONO, fontSize: 10, color: gc, margin: "5px 0 0" }}>{prospect.gradeReason}</p>
         </div>
+
+        {/* Action buttons */}
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <Btn onClick={() => onAdd(prospect)} disabled={inPipeline} color={inPipeline ? C.purple : C.green} sm>{inPipeline ? "Added" : "+ Pipeline"}</Btn>
           {!isEnriched && <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>Enrich</Btn>}
+          {isEnriched && <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>Re-enrich</Btn>}
+          <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel Edit" : "Edit"}</Btn>
           <Btn onClick={generateCopy} loading={generating} color={C.amber} sm>{draft ? (expanded ? "Hide" : "Show Copy") : "Get Copy"}</Btn>
+          <Btn onClick={handleDismiss} color={C.red} sm>Not a Fit</Btn>
         </div>
       </div>
 
+      {/* Edit panel */}
+      {editing && (
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", background: "rgba(171,71,188,0.04)" }}>
+          <Label>Edit Lead Data</Label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            <div>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Email</p>
+              <input value={editData.email} onChange={e => setEditData(d => ({ ...d, email: e.target.value }))} placeholder="owner@business.com"
+                style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
+            </div>
+            <div>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>IG Handle</p>
+              <input value={editData.instagramHandle} onChange={e => {
+                const h = e.target.value.startsWith("@") ? e.target.value : `@${e.target.value}`;
+                const slug = e.target.value.replace(/^@/, "");
+                setEditData(d => ({ ...d, instagramHandle: h, instagram: slug ? `https://www.instagram.com/${slug}/` : "" }));
+              }} placeholder="@handle"
+                style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
+            </div>
+            <div>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Website URL</p>
+              <input value={editData.website} onChange={e => setEditData(d => ({ ...d, website: e.target.value }))} placeholder="https://..."
+                style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
+            </div>
+            <div>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Website Type</p>
+              <select value={editData.websiteType} onChange={e => {
+                const wt = e.target.value;
+                setEditData(d => ({ ...d, websiteType: wt, hasWebsite: wt !== "none" }));
+              }}
+                style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }}>
+                <option value="">None / Unknown</option>
+                <option value="none">No website</option>
+                <option value="link_in_bio">Link-in-bio (campsite, linktree, etc)</option>
+                <option value="real">Real website</option>
+                <option value="weak">Weak DIY site (Wix, GoDaddy, etc)</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>Notes (visible to Claude when generating copy)</p>
+            <textarea value={editData.notes} onChange={e => setEditData(d => ({ ...d, notes: e.target.value }))} placeholder="e.g. They use campsite.bio — has a booking link but no real site. Lots of reels, very active on IG." rows={2}
+              style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none", resize: "vertical" }} />
+          </div>
+          <Btn onClick={saveEdit} color={C.green} sm>Save Changes</Btn>
+        </div>
+      )}
+
+      {/* Copy section */}
       {expanded && draft && (
         <div style={{ borderTop: `1px solid ${C.border}`, padding: "16px" }}>
           {/* IG DM */}
@@ -539,21 +655,30 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline }) {
               <Label>Cold Email</Label>
               <div style={{ display: "flex", gap: 6 }}>
                 <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
-                <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>Send via Gmail</Btn>
+                {prospect.email && (
+                  <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>
+                    {showSend ? "Hide" : "Send via Gmail"}
+                  </Btn>
+                )}
+                {!prospect.email && (
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email in Edit to send</span>
+                )}
               </div>
             </div>
             <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
 
-            {showSend && (
-              <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                <input value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="recipient@email.com"
-                  style={{ flex: 1, background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "8px 12px", fontFamily: MONO, fontSize: 12, color: C.text, outline: "none" }} />
-                <Btn onClick={handleSend} loading={sending} disabled={!recipient.trim()} color={C.green} sm>Send</Btn>
+            {showSend && prospect.email && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
+                  <Dot color={C.green} size={5} />
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>Sending to: {prospect.email}</span>
+                </div>
+                <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
               </div>
             )}
-            {sendResult === "sent"  && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent from trogers@rogers-websolutions.com — lead moved to Contacted</p>}
-            {sendResult === "error" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red,   margin: "8px 0 0" }}>Send failed — check Gmail auth</p>}
+            {sendResult === "sent"  && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent — lead moved to Contacted</p>}
+            {sendResult === "error" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed — check Gmail auth</p>}
           </div>
         </div>
       )}
@@ -561,14 +686,42 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline }) {
   );
 }
 
+async function dismissLead(name) {
+  try {
+    await fetch("/api/dismissed", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-app-pin": process.env.NEXT_PUBLIC_APP_PIN || "",
+      },
+      body: JSON.stringify({ name }),
+    });
+  } catch {}
+}
+
+async function loadDismissed() {
+  try {
+    const res = await fetch("/api/dismissed", {
+      headers: { "x-app-pin": process.env.NEXT_PUBLIC_APP_PIN || "" },
+    });
+    const d = await res.json();
+    return new Set(d.dismissed || []);
+  } catch { return new Set(); }
+}
+
 // ─── LEAD SCRAPER ─────────────────────────────────────────────────────────────
 function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   const { niche = "", prospects = [], loading = false, error = "" } = state;
+  const [dismissed, setDismissed] = useState(new Set());
+
+  // Load dismissed list on mount
+  useEffect(() => {
+    loadDismissed().then(setDismissed);
+  }, []);
 
   async function search() {
     if (!niche.trim()) return;
     setState(s => ({ ...s, loading: true, error: "" }));
-    // Don't wipe existing prospects — append new ones, dedup by name
     const data = await fetchLeads(niche);
     if (data.error) { setState(s => ({ ...s, loading: false, error: data.error })); return; }
     const newProspects = data.prospects || [];
@@ -580,17 +733,26 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
     });
   }
 
-  const aGrade = prospects.filter(p => p.grade === "A");
-  const bGrade = prospects.filter(p => p.grade === "B");
-  const cGrade = prospects.filter(p => p.grade === "C");
-  const dGrade = prospects.filter(p => p.grade === "D");
-  const noSite = prospects.filter(p => !p.hasWebsite);
+  function handleDismiss(name) {
+    setDismissed(prev => new Set([...prev, name]));
+    dismissLead(name);
+    // Also remove from prospects list
+    setState(s => ({ ...s, prospects: s.prospects.filter(p => p.name !== name) }));
+  }
+
+  // Filter out dismissed
+  const visible = prospects.filter(p => !dismissed.has(p.name));
+  const aGrade = visible.filter(p => p.grade === "A");
+  const bGrade = visible.filter(p => p.grade === "B");
+  const cGrade = visible.filter(p => p.grade === "C");
+  const dGrade = visible.filter(p => p.grade === "D");
+  const noSite = visible.filter(p => !p.hasWebsite);
 
   const gradeGroups = [
-    { grade: "A", label: "Grade A — Perfect Fit",        color: C.green,  items: aGrade },
-    { grade: "B", label: "Grade B — Solid Prospect",     color: C.amber,  items: bGrade },
-    { grade: "C", label: "Grade C — Redesign / Care Plan", color: C.blue, items: cGrade },
-    { grade: "D", label: "Grade D — Has Website",        color: C.muted,  items: dGrade },
+    { grade: "A", label: "Grade A — Perfect Fit",           color: C.green, items: aGrade },
+    { grade: "B", label: "Grade B — Solid Prospect",        color: C.amber, items: bGrade },
+    { grade: "C", label: "Grade C — Redesign / Care Plan",  color: C.blue,  items: cGrade },
+    { grade: "D", label: "Grade D — Has Website",           color: C.muted, items: dGrade },
   ].filter(g => g.items.length > 0);
 
   return (
@@ -616,16 +778,16 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
 
       {loading && <Card><p style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Pulling real businesses from Google Maps...</span></p></Card>}
 
-      {!loading && prospects.length > 0 && (
+      {!loading && visible.length > 0 && (
         <>
           {/* Stats bar */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
             {[
-              { label: "Total",    val: prospects.length, color: C.sub   },
-              { label: "No Site",  val: noSite.length,   color: C.green },
-              { label: "Grade A",  val: aGrade.length,   color: C.green },
-              { label: "Grade B",  val: bGrade.length,   color: C.amber },
-              { label: "Grade C",  val: cGrade.length,   color: C.blue  },
+              { label: "Total",    val: visible.length, color: C.sub   },
+              { label: "No Site",  val: noSite.length,  color: C.green },
+              { label: "Grade A",  val: aGrade.length,  color: C.green },
+              { label: "Grade B",  val: bGrade.length,  color: C.amber },
+              { label: "Grade C",  val: cGrade.length,  color: C.blue  },
             ].map(s => (
               <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
                 <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: s.color, marginBottom: 2 }}>{s.val}</div>
@@ -640,12 +802,16 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
               <div style={{ marginBottom: 10 }}><Pill color={g.color}>{g.label}</Pill></div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {g.items.map((p, i) => (
-                  <LeadCard key={`${p.name}-${i}`} prospect={p} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} />
+                  <LeadCard key={`${p.name}-${i}`} prospect={p} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} onDismiss={handleDismiss} />
                 ))}
               </div>
             </div>
           ))}
         </>
+      )}
+
+      {!loading && visible.length === 0 && prospects.length > 0 && (
+        <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>All results dismissed — search a new niche or clear results.</p></Card>
       )}
 
       {!loading && prospects.length === 0 && niche && !error && (
