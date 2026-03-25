@@ -493,6 +493,7 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
 function CopyPanel({ prospect, onSend }) {
   const [draft,      setDraft]      = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [genError,   setGenError]   = useState(null);
   const [sending,    setSending]    = useState(false);
   const [sendResult, setSendResult] = useState(null);
   const [showSend,   setShowSend]   = useState(false);
@@ -502,11 +503,13 @@ function CopyPanel({ prospect, onSend }) {
   useEffect(() => {
     setDraft(null);
     setExpanded(false);
+    setGenError(null);
   }, [prospect.name, prospect.email, prospect.instagram, prospect.websiteType, prospect.notes]);
 
   async function generate() {
     if (draft) { setExpanded(e => !e); return; }
     setGenerating(true);
+    setGenError(null);
 
     const websiteCtx = prospect.hasWebsite
       ? prospect.websiteType === "link_in_bio"
@@ -522,15 +525,24 @@ function CopyPanel({ prospect, onSend }) {
       prospect.phone       ? `Phone: ${prospect.phone}` : null,
     ].filter(Boolean).join(" | ");
 
-    const raw = await ai(
-      RWS_CTX + `\n\nWrite an IG DM and cold email for this REAL business. Return ONLY valid JSON, no backticks:
+    try {
+      const raw = await ai(
+        RWS_CTX + `\n\nWrite an IG DM and cold email for this REAL business. Return ONLY valid JSON, no backticks:
 {"dm":"3-4 sentences. Casual Instagram DM. Reference real rating and review count. Be precise about web presence — if link-in-bio say that, if weak site say that, if no site say that. Close with rogers-websolutions.com/book. Sound like a real person.","emailSubject":"Subject using their real data points","emailBody":"Cold email. Open with their real numbers. Address the exact web presence gap accurately. 3-4 short paragraphs. Close: rogers-websolutions.com/book. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
-      `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}★ | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
-    );
-    try { setDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
-    catch { setDraft({ dm: raw, emailSubject: `${prospect.name} — ${prospect.reviews} reviews`, emailBody: raw }); }
+        `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}★ | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
+      );
+
+      if (raw.startsWith("Error:")) {
+        setGenError(raw);
+      } else {
+        try { setDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
+        catch { setDraft({ dm: raw, emailSubject: `${prospect.name} — ${prospect.reviews} reviews`, emailBody: raw }); }
+        setExpanded(true);
+      }
+    } catch (e) {
+      setGenError(`Error: ${e.message}`);
+    }
     setGenerating(false);
-    setExpanded(true);
   }
 
   async function handleSend() {
@@ -547,11 +559,20 @@ function CopyPanel({ prospect, onSend }) {
 
   return (
     <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px" }}>
-      <div style={{ marginBottom: expanded && draft ? 14 : 0 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: expanded && draft ? 14 : 0 }}>
         <Btn onClick={generate} loading={generating} color={C.amber} sm>
           {draft ? (expanded ? "Hide Copy" : "Show Copy") : "Get Copy"}
         </Btn>
+        {genError && (
+          <Btn onClick={() => { setGenError(null); generate(); }} color={C.red} sm>Retry</Btn>
+        )}
       </div>
+
+      {genError && (
+        <div style={{ marginTop: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} — hit Retry to try again</span>
+        </div>
+      )}
 
       {expanded && draft && (
         <>

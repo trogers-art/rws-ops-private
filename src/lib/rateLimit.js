@@ -32,7 +32,7 @@ export function rateLimit({ windowMs = 60000, max = 20 } = {}) {
 }
 
 // Pre-built limiters for each route
-export const chatLimiter    = rateLimit({ max: 30, windowMs: 60000 });
-export const enrichLimiter  = rateLimit({ max: 20, windowMs: 60000 });
+export const chatLimiter    = rateLimit({ max: 60, windowMs: 60000 });
+export const enrichLimiter  = rateLimit({ max: 30, windowMs: 60000 });
 export const gmailLimiter   = rateLimit({ max: 10, windowMs: 60000 });
 export const pipelineLimiter = rateLimit({ max: 60, windowMs: 60000 });
