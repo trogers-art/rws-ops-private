@@ -531,7 +531,7 @@ function CopyPanel({ prospect, onSend }) {
     try {
       const raw = await ai(
         RWS_CTX + `\n\nWrite an IG DM and cold email for this REAL business. Return ONLY valid JSON, no backticks:
-{"dm":"3-4 sentences. Casual Instagram DM. Reference real rating and review count. Be precise about web presence — if link-in-bio say that, if weak site say that, if no site say that. Close with rogers-websolutions.com/book. Sound like a real person.","emailSubject":"Subject using their real data points","emailBody":"Cold email. Open with their real numbers. Address the exact web presence gap accurately. 3-4 short paragraphs. Close: rogers-websolutions.com/book. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+{"dm":"3-4 sentences. Casual Instagram DM. Reference real rating and review count. Be precise about web presence — if link-in-bio say that, if weak site say that, if no site say that. Close with rogers-websolutions.com/book. Sound like a real person. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Subject using their real data points","emailBody":"Cold email. Open with their real numbers. Address the exact web presence gap accurately. 3-4 short paragraphs. Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
         `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}★ | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
       );
 
@@ -1039,10 +1039,10 @@ function OutreachModule({ state, setState, pipeline }) {
     if (!target.trim()) return;
     setState(s => ({ ...s, loading: true, output: "" }));
     const prompts = {
-      cold:     "Write a cold outreach EMAIL with Subject: line. Use their real data. Human, value-first, Calendly close.",
-      dm:       "Write a cold Instagram DM. 3-4 sentences. References real data. Soft Calendly close. No em-dashes.",
-      followup: "Write a follow-up email. No reply to first outreach. Brief, no pressure, specific re-pitch.",
-      warm:     "Write a closing email. They showed interest. Move them to book on Calendly. Confident and short.",
+      cold:     "Write a cold outreach EMAIL with Subject: line. Use their real data. Human, value-first, Calendly close. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
+      dm:       "Write a cold Instagram DM. 3-4 sentences. References real data. Soft rogers-websolutions.com/book close. No em-dashes. Final line must be exactly: Trafton @ Rogers Web Solutions",
+      followup: "Write a follow-up email. No reply to first outreach. Brief, no pressure, specific re-pitch. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
+      warm:     "Write a closing email. They showed interest. Move them to book on rogers-websolutions.com/book. Confident and short. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
     };
     const r = await ai(RWS_CTX + `\n\n${prompts[type]}\nSign: Trafton Rogers | RWS | trogers@rogers-websolutions.com`, target);
     setState(s => ({ ...s, output: r, loading: false }));
