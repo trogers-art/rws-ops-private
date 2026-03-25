@@ -50,7 +50,13 @@ TRAFTON'S VOICE — follow this exactly:
 - Low-pressure close. Invite a conversation, send them to https://www.rogers-websolutions.com/book to book.
 - NEVER say: leverage, digital footprint, I'd love the opportunity, I hope this finds you well, we help businesses grow
 - NEVER use em-dashes, exclamation points, or fake casual openers
-- NEVER invent data. Only use facts provided about the actual business.`;
+- NEVER invent data. Only use facts provided about the actual business.
+
+EMAIL SIGNATURE — always end emails with exactly this, on its own line:
+Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com
+
+DM SIGN-OFF — always end DMs with this on its own line:
+Trafton @ Rogers Web Solutions`;
 
 const NICHES = [
   "HVAC companies Orange County",
