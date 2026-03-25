@@ -77,12 +77,18 @@ async function ai(system, user, maxTokens = 1000) {
 }
 
 async function enrichLead(lead) {
-  const res = await fetch("/api/enrich", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: lead.name, website: lead.website, city: lead.city, category: lead.category, phone: lead.phone }),
-  });
-  return res.json();
+  try {
+    const res = await fetch("/api/enrich", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: lead.name, website: lead.website, city: lead.city, category: lead.category, phone: lead.phone }),
+    });
+    const data = await res.json();
+    return data || { enriched: false };
+  } catch (e) {
+    console.error("enrichLead fetch error:", e);
+    return { enriched: false, error: e.message };
+  }
 }
 
 async function fetchGmail() {
@@ -617,16 +623,30 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
 
   async function handleEnrich() {
     setEnriching(true);
-    const result = await enrichLead(prospect);
-    const updated = { ...prospect, ...result };
-    setProspect(updated);
-    setEditData(d => ({
-      ...d,
-      email:           result.email || d.email,
-      instagram:       result.instagram || d.instagram,
-      instagramHandle: result.instagramHandle || d.instagramHandle,
-      websiteType:     result.websiteType || d.websiteType,
-    }));
+    try {
+      const result = await enrichLead(prospect);
+      // Only apply known safe fields — never spread unknown result data onto prospect
+      if (result && !result.error) {
+        setProspect(p => ({
+          ...p,
+          email:           result.email || p.email || null,
+          instagram:       result.instagram || p.instagram || null,
+          instagramHandle: result.instagramHandle || p.instagramHandle || null,
+          websiteType:     result.websiteType || p.websiteType || null,
+          ownerName:       result.ownerName || p.ownerName || null,
+          enriched:        true,
+        }));
+        setEditData(d => ({
+          ...d,
+          email:           result.email || d.email,
+          instagram:       result.instagram || d.instagram,
+          instagramHandle: result.instagramHandle || d.instagramHandle,
+          websiteType:     result.websiteType || d.websiteType,
+        }));
+      }
+    } catch (e) {
+      console.error("Enrich failed:", e);
+    }
     setEnriching(false);
   }
 
@@ -725,16 +745,29 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
 
   async function handleEnrich() {
     setEnriching(true);
-    const result = await enrichLead(lead);
-    const patch = {
-      email:           result.email || lead.email,
-      instagram:       result.instagram || lead.instagram,
-      instagramHandle: result.instagramHandle || lead.instagramHandle,
-      websiteType:     result.websiteType || lead.websiteType,
-      enriched:        true,
-    };
-    onUpdate(lead.id, patch);
-    setEditData(d => ({ ...d, ...patch }));
+    try {
+      const result = await enrichLead(lead);
+      if (result && !result.error) {
+        const patch = {
+          email:           result.email || lead.email || null,
+          instagram:       result.instagram || lead.instagram || null,
+          instagramHandle: result.instagramHandle || lead.instagramHandle || null,
+          websiteType:     result.websiteType || lead.websiteType || null,
+          ownerName:       result.ownerName || lead.ownerName || null,
+          enriched:        true,
+        };
+        onUpdate(lead.id, patch);
+        setEditData(d => ({
+          ...d,
+          email:           patch.email || d.email,
+          instagram:       patch.instagram || d.instagram,
+          instagramHandle: patch.instagramHandle || d.instagramHandle,
+          websiteType:     patch.websiteType || d.websiteType,
+        }));
+      }
+    } catch (e) {
+      console.error("Enrich failed:", e);
+    }
     setEnriching(false);
   }
 
