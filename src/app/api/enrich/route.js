@@ -4,9 +4,20 @@
 // 2. Apollo.io — find owner email by company name + domain
 // 3. SerpAPI Google search — find Instagram profile when no website
 
+import { enrichLimiter } from "@/lib/rateLimit";
+
 export async function POST(req) {
+  const rl = enrichLimiter("enrich");
+  if (!rl.allowed) {
+    return Response.json({ error: "Too many requests", enriched: false }, { status: 429 });
+  }
+
   try {
     const { name, website, city, category, phone } = await req.json();
+
+    if (!name?.trim()) {
+      return Response.json({ error: "Business name required", enriched: false }, { status: 400 });
+    }
 
     const result = {
       email: null,

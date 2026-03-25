@@ -109,10 +109,12 @@ async function sendEmail(to, subject, body) {
   return res.json();
 }
 
-// Pipeline persistence
+// Pipeline persistence — sends server-side PIN header
 async function loadPipeline() {
   try {
-    const res = await fetch("/api/pipeline");
+    const res = await fetch("/api/pipeline", {
+      headers: { "x-app-pin": process.env.NEXT_PUBLIC_APP_PIN || "" },
+    });
     const d = await res.json();
     return d.pipeline || [];
   } catch { return []; }
@@ -122,7 +124,10 @@ async function savePipeline(pipeline) {
   try {
     await fetch("/api/pipeline", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-app-pin": process.env.NEXT_PUBLIC_APP_PIN || "",
+      },
       body: JSON.stringify({ pipeline }),
     });
   } catch {}

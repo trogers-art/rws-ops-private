@@ -1,12 +1,21 @@
 // src/app/api/pipeline/route.js
 // Persistent pipeline storage via Upstash Redis
-// Env vars auto-added by Vercel when you connected Upstash:
-// UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
+// Protected by server-side PIN check — APP_PIN env var (NOT NEXT_PUBLIC_)
+
+import { pipelineLimiter } from "@/lib/rateLimit";
 
 const PIPELINE_KEY = "rws_pipeline_v1";
 
+// Server-side PIN check — APP_PIN is never exposed to the client
+function isAuthorizedRequest(req) {
+  const pin = req.headers.get("x-app-pin");
+  const serverPin = process.env.APP_PIN;
+  // If no PIN is configured, allow through (backwards compat during setup)
+  if (!serverPin) return true;
+  return pin === serverPin;
+}
+
 async function getRedis() {
-  // Vercel adds Upstash vars as KV_REST_API_URL / KV_REST_API_TOKEN
   const url   = process.env.KV_REST_API_URL   || process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
@@ -14,8 +23,16 @@ async function getRedis() {
   return new Redis({ url, token });
 }
 
-// GET — load pipeline
-export async function GET() {
+export async function GET(req) {
+  const rl = pipelineLimiter("pipeline-get");
+  if (!rl.allowed) {
+    return Response.json({ error: "Too many requests" }, { status: 429 });
+  }
+
+  if (!isAuthorizedRequest(req)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const redis = await getRedis();
     if (!redis) {
@@ -28,10 +45,21 @@ export async function GET() {
   }
 }
 
-// POST — save pipeline
 export async function POST(req) {
+  const rl = pipelineLimiter("pipeline-post");
+  if (!rl.allowed) {
+    return Response.json({ error: "Too many requests" }, { status: 429 });
+  }
+
+  if (!isAuthorizedRequest(req)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { pipeline } = await req.json();
+    if (!Array.isArray(pipeline)) {
+      return Response.json({ error: "Invalid pipeline data" }, { status: 400 });
+    }
     const redis = await getRedis();
     if (!redis) {
       return Response.json({ success: false, warning: "Upstash not configured" });
