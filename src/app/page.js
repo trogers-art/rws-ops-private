@@ -113,12 +113,18 @@ async function fetchLeads(query) {
 }
 
 async function sendEmail(to, subject, body) {
-  const res = await fetch("/api/gmail-send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to, subject, body }),
-  });
-  return res.json();
+  try {
+    const res = await fetch("/api/gmail-send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, subject, body }),
+    });
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch { return { success: false, error: `Non-JSON response (${res.status}): ${text.slice(0, 120)}` }; }
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
 
 async function loadPipeline() {
@@ -580,11 +586,13 @@ function CopyPanel({ prospect, onSend }) {
     if (!prospect.email || !draft) return;
     setSending(true); setSendResult(null);
     const result = await sendEmail(prospect.email, draft.emailSubject, draft.emailBody);
-    setSendResult(result.success ? "sent" : "error");
     setSending(false);
     if (result.success) {
+      setSendResult("sent");
       logOutreach("emails");
       if (onSend) onSend();
+    } else {
+      setSendResult(result.error || "unknown error");
     }
   }
 
@@ -654,7 +662,7 @@ function CopyPanel({ prospect, onSend }) {
             )}
 
             {sendResult === "sent"  && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
-            {sendResult === "error" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red,   margin: "8px 0 0" }}>Send failed — check Gmail auth</p>}
+            {sendResult && sendResult !== "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed: {sendResult}</p>}
           </div>
         </>
       )}
