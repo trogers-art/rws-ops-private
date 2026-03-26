@@ -256,18 +256,46 @@ function LoginScreen({ onEnter, onPrepReady }) {
     const prepP = (async () => {
       try {
         const data = await fetchLeads(todayNiche);
-        const prospects = (data.prospects || []).filter(p => !p.hasWebsite).slice(0, 6);
-        const enriched = await Promise.all(
-          prospects.filter(p => p.grade === "A").slice(0, 3).map(async p => {
+        logNicheSearch(todayNiche, data.aGrade || 0, data.bGrade || 0);
+        const allResults  = data.prospects || [];
+        const candidates  = allResults.filter(p => p.grade === "A" || p.grade === "B").slice(0, 8);
+        const rest        = allResults.filter(p => p.grade !== "A" && p.grade !== "B").slice(0, 4);
+
+        // Enrich all A/B candidates
+        const enrichedCandidates = await Promise.all(
+          candidates.map(async p => {
             const enrichment = await enrichLead(p);
-            return { ...p, ...enrichment };
+            return { ...p, ...enrichment, enriched: true };
           })
         );
-        const allProspects = prospects.map(p => {
-          const e = enriched.find(e => e.name === p.name);
-          return e || p;
-        });
-        onPrepReady({ prospects: allProspects, niche: todayNiche });
+
+        // Load existing pipeline to avoid duplication
+        const existingPipeline = await loadPipeline();
+        const existingNames    = new Set(existingPipeline.map(l => l.name));
+        const dismissed        = await loadDismissed();
+
+        // Auto-pipeline: contact found + not already in pipeline + not dismissed
+        const toAdd = enrichedCandidates.filter(p =>
+          !!(p.email || p.instagram) &&
+          !existingNames.has(p.name) &&
+          !dismissed.has(p.name)
+        );
+
+        let updatedPipeline = existingPipeline;
+        if (toAdd.length > 0) {
+          const newEntries = toAdd.map(p => ({
+            id:      `${Date.now()}-${Math.random()}`,
+            status:  "new",
+            notes:   "",
+            addedAt: new Date().toLocaleDateString(),
+            ...p,
+          }));
+          updatedPipeline = [...existingPipeline, ...newEntries];
+          await savePipeline(updatedPipeline);
+        }
+
+        const allProspects = [...enrichedCandidates, ...rest];
+        onPrepReady({ prospects: allProspects, niche: todayNiche, autoPipelined: toAdd.length, pipeline: updatedPipeline });
       } catch (e) { console.error("prep error", e); }
       setPrepStatus("done");
     })();
@@ -326,7 +354,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
             <div>
               <Label>Today's Leads</Label>
               <p style={{ fontFamily: BODY, fontSize: 13, color: C.sub, margin: 0 }}>
-                {prepStatus === "running" ? `Pulling + enriching: ${todayNiche}` : "Leads enriched and ready"}
+                {prepStatus === "running" ? `Pulling + enriching: ${todayNiche}` : "Leads enriched and auto-pipelined"}
               </p>
             </div>
             <Pill color={prepStatus === "done" ? C.green : C.amber}>{prepStatus === "done" ? "ready" : "working"}</Pill>
@@ -611,40 +639,16 @@ function CopyPanel({ prospect, onSend }) {
             <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
 
-            {/* Send form */}
             {showSend && prospect.email && (
               <div style={{ marginTop: 10 }}>
-
-                {/* Subject preview — shows exactly what will land in their inbox */}
-                <div style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 10,
-                  padding: "8px 12px",
-                  background: "rgba(0,0,0,0.3)",
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 8,
-                  marginBottom: 8,
-                }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 12px", background: "rgba(0,0,0,0.3)", border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 8 }}>
                   <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", whiteSpace: "nowrap", paddingTop: 1 }}>SUBJECT</span>
                   <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, lineHeight: 1.5, wordBreak: "break-word" }}>{draft.emailSubject}</span>
                 </div>
-
-                {/* To line */}
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "8px 12px",
-                  background: `${C.green}08`,
-                  borderRadius: 8,
-                  border: `1px solid ${C.green}20`,
-                  marginBottom: 8,
-                }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
                   <Dot color={C.green} size={5} />
                   <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>To: {prospect.email}</span>
                 </div>
-
                 <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
               </div>
             )}
@@ -842,8 +846,6 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
 
   return (
     <div style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : C.border2}`, borderRadius: 10, overflow: "hidden" }}>
-
-      {/* Header */}
       <div style={{ padding: "14px 18px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
@@ -875,7 +877,6 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
         </div>
       </div>
 
-      {/* Status buttons */}
       <div style={{ padding: "0 18px 12px", display: "flex", flexWrap: "wrap", gap: 5 }}>
         {Object.entries(STATUS).map(([id, st]) => (
           <button key={id} onClick={() => onStatusChange(lead.id, id)}
@@ -915,9 +916,12 @@ async function loadDismissed() {
 }
 
 // ─── LEAD SCRAPER ─────────────────────────────────────────────────────────────
-function LeadScraper({ state, setState, onAdd, pipelineNames }) {
+function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
   const { niche = "", prospects = [], loading = false, error = "" } = state;
-  const [dismissed, setDismissed] = useState(new Set());
+  const [dismissed,       setDismissed]       = useState(new Set());
+  const [autoPipelining,  setAutoPipelining]  = useState(false);
+  const [autoLog,         setAutoLog]         = useState([]);
+  const [showAutoLog,     setShowAutoLog]     = useState(false);
 
   useEffect(() => {
     loadDismissed().then(setDismissed);
@@ -928,6 +932,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
     setState(s => ({ ...s, loading: true, error: "" }));
     const data = await fetchLeads(niche);
     if (data.error) { setState(s => ({ ...s, loading: false, error: data.error })); return; }
+    logNicheSearch(niche, data.aGrade || 0, data.bGrade || 0);
     const newProspects = data.prospects || [];
     setState(s => {
       const existing = s.prospects || [];
@@ -935,6 +940,89 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
       const merged = [...existing, ...newProspects.filter(p => !existingNames.has(p.name))];
       return { ...s, loading: false, prospects: merged, lastSearch: niche };
     });
+
+    // Auto-pipeline: enrich A/B leads from this search that aren't already pipelined
+    const candidates = newProspects.filter(p =>
+      (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)
+    );
+    if (candidates.length === 0) return;
+
+    const currentDismissed = await loadDismissed();
+    const eligible = candidates.filter(p => !currentDismissed.has(p.name));
+    if (eligible.length === 0) return;
+
+    setAutoLog([`Auto-enriching ${eligible.length} Grade A/B leads from search...`]);
+    setShowAutoLog(true);
+    setAutoPipelining(true);
+
+    const log = [`Auto-enriching ${eligible.length} Grade A/B leads from search...`];
+    let added = 0, skipped = 0;
+
+    for (const prospect of eligible) {
+      log.push(`Enriching ${prospect.name}...`);
+      setAutoLog([...log]);
+      const result  = await enrichLead(prospect);
+      const enriched = { ...prospect, ...result, enriched: true };
+      if (!!(enriched.email || enriched.instagram)) {
+        onAdd(enriched);
+        added++;
+        log.push(`Added: ${prospect.name} (${enriched.email || enriched.instagramHandle || "IG"})`);
+      } else {
+        skipped++;
+        log.push(`Skipped: ${prospect.name} — no contact found`);
+      }
+      setAutoLog([...log]);
+    }
+
+    log.push(`Done. ${added} added, ${skipped} skipped.`);
+    setAutoLog([...log]);
+    setAutoPipelining(false);
+  }
+
+  async function autoPipeline() {
+    const visible = prospects.filter(p => !dismissed.has(p.name));
+    const candidates = visible.filter(p =>
+      (p.grade === "A" || p.grade === "B") &&
+      !pipelineNames.has(p.name)
+    );
+
+    if (candidates.length === 0) {
+      setAutoLog(["No Grade A or B leads available that aren't already in pipeline."]);
+      setShowAutoLog(true);
+      return;
+    }
+
+    setAutoPipelining(true);
+    setAutoLog([`Found ${candidates.length} Grade A/B candidates. Enriching...`]);
+    setShowAutoLog(true);
+
+    let added = 0;
+    let skipped = 0;
+    const log = [`Found ${candidates.length} Grade A/B candidates. Enriching...`];
+
+    for (const prospect of candidates) {
+      log.push(`Enriching ${prospect.name}...`);
+      setAutoLog([...log]);
+
+      const result = await enrichLead(prospect);
+      const enriched = { ...prospect, ...result, enriched: true };
+      const hasContact = !!(enriched.email || enriched.instagram);
+
+      if (hasContact) {
+        onAdd(enriched);
+        added++;
+        const contact = enriched.email ? enriched.email : enriched.instagramHandle || "IG";
+        log.push(`Added: ${prospect.name} (${contact})`);
+      } else {
+        skipped++;
+        log.push(`Skipped: ${prospect.name} — no email or IG found`);
+      }
+      setAutoLog([...log]);
+    }
+
+    log.push(`Done. ${added} added to pipeline, ${skipped} skipped (no contact info).`);
+    setAutoLog([...log]);
+    setAutoPipelining(false);
   }
 
   function handleDismiss(name) {
@@ -949,6 +1037,10 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   const cGrade  = visible.filter(p => p.grade === "C");
   const dGrade  = visible.filter(p => p.grade === "D");
   const noSite  = visible.filter(p => !p.hasWebsite);
+
+  const autoCandidates = visible.filter(p =>
+    (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)
+  ).length;
 
   const gradeGroups = [
     { grade: "A", label: "Grade A — Perfect Fit",           color: C.green, items: aGrade },
@@ -971,12 +1063,57 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
           <Btn onClick={search} loading={loading} disabled={!niche.trim()} color={C.amber}>Search</Btn>
         </div>
         {prospects.length > 0 && (
-          <button onClick={() => setState(s => ({ ...s, prospects: [] }))} style={{ marginTop: 8, fontFamily: MONO, fontSize: 10, background: "transparent", border: "none", color: C.muted, cursor: "pointer", padding: 0 }}>
-            Clear all results
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+            <button onClick={() => setState(s => ({ ...s, prospects: [] }))} style={{ fontFamily: MONO, fontSize: 10, background: "transparent", border: "none", color: C.muted, cursor: "pointer", padding: 0 }}>
+              Clear all results
+            </button>
+            {autoCandidates > 0 && (
+              <Btn
+                onClick={autoPipeline}
+                loading={autoPipelining}
+                color={C.green}
+                sm
+              >
+                Auto-enrich &amp; Pipeline ({autoCandidates} A/B leads)
+              </Btn>
+            )}
+          </div>
         )}
         {error && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "10px 0 0" }}>Error: {error}</p>}
       </Card>
+
+      {/* Auto-pipeline log */}
+      {showAutoLog && autoLog.length > 0 && (
+        <Card style={{ padding: "14px 18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <Label>Auto-pipeline Log</Label>
+            {!autoPipelining && (
+              <button onClick={() => setShowAutoLog(false)} style={{ fontFamily: MONO, fontSize: 10, background: "transparent", border: "none", color: C.muted, cursor: "pointer" }}>
+                Dismiss
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {autoLog.map((line, i) => {
+              const isAdded   = line.startsWith("Added:");
+              const isSkipped = line.startsWith("Skipped:");
+              const isDone    = line.startsWith("Done.");
+              const color     = isAdded ? C.green : isSkipped ? C.muted : isDone ? C.amber : C.sub;
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {autoPipelining && i === autoLog.length - 1 && !isDone
+                    ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>→</span>
+                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>
+                        {isAdded ? "✓" : isSkipped ? "—" : isDone ? "●" : "·"}
+                      </span>
+                  }
+                  <span style={{ fontFamily: MONO, fontSize: 11, color }}>{line}</span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {loading && <Card><p style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Pulling real businesses from Google Maps...</span></p></Card>}
 
@@ -1149,6 +1286,225 @@ function getWeekLog() {
   return { dms, emails, today: log[getTodayKey()] || { dms: 0, emails: 0 } };
 }
 
+// ─── NICHE HISTORY HELPERS ────────────────────────────────────────────────────
+function logNicheSearch(query, aCount, bCount) {
+  try {
+    const key  = "rws_niche_history";
+    const hist = JSON.parse(localStorage.getItem(key) || "[]");
+    hist.push({ query, date: getTodayKey(), aCount, bCount, total: aCount + bCount });
+    localStorage.setItem(key, JSON.stringify(hist.slice(-200)));
+  } catch {}
+}
+
+function getNicheHistory() {
+  try { return JSON.parse(localStorage.getItem("rws_niche_history") || "[]"); } catch { return []; }
+}
+
+// ─── ANALYTICS MODULE ─────────────────────────────────────────────────────────
+function AnalyticsModule({ pipeline }) {
+  const outreachLog  = getOutreachLog();
+  const nicheHistory = getNicheHistory();
+
+  // Pipeline funnel counts
+  const statusCounts = Object.keys(STATUS).reduce((acc, s) => {
+    acc[s] = pipeline.filter(l => l.status === s).length;
+    return acc;
+  }, {});
+  const total     = pipeline.length;
+  const contacted = pipeline.filter(l => l.status !== "new").length;
+  const warm      = pipeline.filter(l => ["warm","closed"].includes(l.status)).length;
+  const closed    = pipeline.filter(l => l.status === "closed").length;
+
+  // Outreach last 30 days — build array newest-first
+  const outreachDays = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toLocaleDateString("en-CA");
+    outreachDays.push({
+      date:   key,
+      label:  d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      dms:    outreachLog[key]?.dms    || 0,
+      emails: outreachLog[key]?.emails || 0,
+    });
+  }
+  const totalDMs     = outreachDays.reduce((a, d) => a + d.dms, 0);
+  const totalEmails  = outreachDays.reduce((a, d) => a + d.emails, 0);
+  const activeDays   = outreachDays.filter(d => d.dms + d.emails > 0).length;
+  const maxActivity  = Math.max(...outreachDays.map(d => d.dms + d.emails), 1);
+
+  // Niche performance — aggregate by query
+  const nicheMap = {};
+  nicheHistory.forEach(({ query, aCount, bCount }) => {
+    if (!nicheMap[query]) nicheMap[query] = { searches: 0, aTotal: 0, bTotal: 0 };
+    nicheMap[query].searches++;
+    nicheMap[query].aTotal += aCount;
+    nicheMap[query].bTotal += bCount;
+  });
+  const nicheRows = Object.entries(nicheMap)
+    .map(([q, v]) => ({ query: q, ...v, avgA: v.searches ? (v.aTotal / v.searches).toFixed(1) : 0 }))
+    .sort((a, b) => b.aTotal - a.aTotal)
+    .slice(0, 8);
+
+  // Grade breakdown of current pipeline
+  const gradeMap = { A: 0, B: 0, C: 0, D: 0 };
+  pipeline.forEach(l => { if (l.grade) gradeMap[l.grade]++; });
+
+  const dataAge = pipeline.length < 3 || activeDays < 2;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {dataAge && (
+        <div style={{ background: `${C.amber}08`, border: `1px solid ${C.amber}25`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+          <Dot color={C.amber} size={6} />
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>
+            Early data — trends get meaningful at 30+ days and 10+ pipeline leads. Framework is recording now.
+          </span>
+        </div>
+      )}
+
+      {/* Pipeline funnel */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <Dot color={C.green} />
+          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Pipeline Funnel</span>
+        </div>
+
+        {total === 0 ? (
+          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No pipeline leads yet.</p>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
+              {[
+                { label: "Total",     val: total,     color: C.sub,    pct: null },
+                { label: "Contacted", val: contacted,  color: C.blue,   pct: total ? Math.round(contacted / total * 100) : 0 },
+                { label: "Warm",      val: warm,       color: C.green,  pct: contacted ? Math.round(warm / contacted * 100) : 0 },
+                { label: "Closed",    val: closed,     color: C.purple, pct: warm ? Math.round(closed / warm * 100) : 0 },
+              ].map(s => (
+                <div key={s.label} style={{ background: C.cardHi, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
+                  <div style={{ fontFamily: MONO, fontSize: 22, fontWeight: 500, color: s.color, marginBottom: 3 }}>{s.val}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: s.pct !== null ? 4 : 0 }}>{s.label}</div>
+                  {s.pct !== null && <div style={{ fontFamily: MONO, fontSize: 10, color: s.color }}>{s.pct}% conv.</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* Status bar */}
+            <Label>Status Breakdown</Label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {Object.entries(STATUS).map(([id, st]) => {
+                const count = statusCounts[id] || 0;
+                const pct   = total ? (count / total) * 100 : 0;
+                return (
+                  <div key={id} style={{ display: "grid", gridTemplateColumns: "80px 1fr 32px", gap: 10, alignItems: "center" }}>
+                    <span style={{ fontFamily: MONO, fontSize: 10, color: st.color }}>{st.label}</span>
+                    <div style={{ height: 6, background: "rgba(255,255,255,0.05)", borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${pct}%`, background: st.color, borderRadius: 3, transition: "width 0.4s ease" }} />
+                    </div>
+                    <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, textAlign: "right" }}>{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Grade breakdown */}
+            <Divider />
+            <Label>Pipeline Grade Mix</Label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {Object.entries(gradeMap).map(([g, count]) => (
+                <div key={g} style={{ flex: 1, background: C.cardHi, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px", textAlign: "center" }}>
+                  <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: GRADE_COLOR[g], marginBottom: 2 }}>{count}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase" }}>Grade {g}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* Outreach activity — last 30 days */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Dot color={C.purple} />
+            <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Outreach Activity</span>
+            <Pill color={C.muted} sm>30 days</Pill>
+          </div>
+          <div style={{ display: "flex", gap: 16 }}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: C.purple }}>{totalDMs}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>DMs</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: C.green }}>{totalEmails}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>Emails</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: C.blue }}>{activeDays}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>Active days</div>
+            </div>
+          </div>
+        </div>
+
+        {totalDMs + totalEmails === 0 ? (
+          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No outreach logged yet. DMs and emails are tracked automatically when you copy or send from the Pipeline tab.</p>
+        ) : (
+          <>
+            {/* Bar chart — last 30 days */}
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 60, marginBottom: 8 }}>
+              {outreachDays.map((d, i) => {
+                const total = d.dms + d.emails;
+                const h = total ? Math.max(4, (total / maxActivity) * 60) : 2;
+                return (
+                  <div key={i} title={`${d.label}: ${d.dms} DMs, ${d.emails} emails`}
+                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", cursor: "default" }}>
+                    <div style={{ width: "100%", borderRadius: "2px 2px 0 0", background: total ? `linear-gradient(to top, ${C.green}90, ${C.purple}90)` : "rgba(255,255,255,0.04)", height: h, transition: "height 0.3s ease" }} />
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{outreachDays[0]?.label}</span>
+              <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{outreachDays[29]?.label}</span>
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* Niche performance */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <Dot color={C.amber} />
+          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Niche Performance</span>
+        </div>
+
+        {nicheRows.length === 0 ? (
+          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No searches logged yet. Niche data accumulates as you search in the Leads tab.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "0 0 8px", borderBottom: `1px solid ${C.border}`, marginBottom: 8 }}>
+              {["Niche", "Searches", "A Leads", "B Leads", "Avg A"].map(h => (
+                <span key={h} style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: h === "Niche" ? "left" : "right" }}>{h}</span>
+              ))}
+            </div>
+            {nicheRows.map((row, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.query}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textAlign: "right" }}>{row.searches}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.green, textAlign: "right" }}>{row.aTotal}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, textAlign: "right" }}>{row.bTotal}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textAlign: "right" }}>{row.avgA}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+    </div>
+  );
+}
+
 // ─── PIPELINE MODULE ──────────────────────────────────────────────────────────
 function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
   const [filter,  setFilter]  = useState("all");
@@ -1302,18 +1658,16 @@ function CommandCenter({ prepData }) {
   const [pipeline, setPipelineRaw] = useState([]);
 
   useEffect(() => {
-    loadPipeline().then(saved => {
-      if (saved.length > 0) {
-        setPipelineRaw(saved);
-      } else if (prepData?.prospects?.length > 0) {
-        const seeds = prepData.prospects
-          .filter(p => p.grade === "A")
-          .slice(0, 3)
-          .map(p => ({ id: `${Date.now()}-${Math.random()}`, status: "new", notes: "", addedAt: new Date().toLocaleDateString(), ...p }));
-        setPipelineRaw(seeds);
-      }
+    if (prepData?.pipeline?.length > 0) {
+      // Login prep already enriched, filtered, and saved to Redis — use it directly
+      setPipelineRaw(prepData.pipeline);
       setPipelineLoaded(true);
-    });
+    } else {
+      loadPipeline().then(saved => {
+        setPipelineRaw(saved);
+        setPipelineLoaded(true);
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -1346,11 +1700,12 @@ function CommandCenter({ prepData }) {
   const followUpDue    = pipeline.filter(l => followUpStatus(l)?.urgent).length;
 
   const tabs = [
-    { id: "email",    label: "Email",    dot: C.green  },
-    { id: "calendar", label: "Calendar", dot: C.blue   },
-    { id: "leads",    label: "Leads",    dot: C.amber  },
-    { id: "outreach", label: "Outreach", dot: C.purple },
-    { id: "pipeline", label: "Pipeline", dot: followUpDue > 0 ? C.red : C.green, badge: followUpDue > 0 ? `${followUpDue} due` : (activePipeline || null) },
+    { id: "email",     label: "Email",     dot: C.green  },
+    { id: "calendar",  label: "Calendar",  dot: C.blue   },
+    { id: "leads",     label: "Leads",     dot: C.amber  },
+    { id: "outreach",  label: "Outreach",  dot: C.purple },
+    { id: "pipeline",  label: "Pipeline",  dot: followUpDue > 0 ? C.red : C.green, badge: followUpDue > 0 ? `${followUpDue} due` : (activePipeline || null) },
+    { id: "analytics", label: "Analytics", dot: C.blue   },
   ];
 
   return (
@@ -1387,11 +1742,12 @@ function CommandCenter({ prepData }) {
       </div>
 
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 24px" }}>
-        <div style={{ display: tab === "email"    ? "block" : "none" }}><EmailModule    state={emailState}    setState={setEmailState} /></div>
-        <div style={{ display: tab === "calendar" ? "block" : "none" }}><CalendarModule state={calendarState} setState={setCalendarState} /></div>
-        <div style={{ display: tab === "leads"    ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} /></div>
-        <div style={{ display: tab === "outreach" ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
-        <div style={{ display: tab === "pipeline" ? "block" : "none" }}><PipelineModule pipeline={pipeline} onUpdate={updateLead} onRemove={removeLead} /></div>
+        <div style={{ display: tab === "email"     ? "block" : "none" }}><EmailModule    state={emailState}    setState={setEmailState} /></div>
+        <div style={{ display: tab === "calendar"  ? "block" : "none" }}><CalendarModule state={calendarState} setState={setCalendarState} /></div>
+        <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} pipeline={pipeline} /></div>
+        <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
+        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline} onUpdate={updateLead} onRemove={removeLead} /></div>
+        <div style={{ display: tab === "analytics" ? "block" : "none" }}><AnalyticsModule pipeline={pipeline} /></div>
       </div>
 
       <style>{`
