@@ -541,20 +541,23 @@ function CopyPanel({ prospect, onSend }) {
     setDraft(null);
     setExpanded(false);
     setGenError(null);
-  }, [prospect.name, prospect.email, prospect.instagram, prospect.websiteType, prospect.notes]);
+  }, [prospect.name, prospect.email, prospect.instagram, prospect.websiteType, prospect.website, prospect.hasWebsite, prospect.notes]);
 
   async function generate() {
     if (draft) { setExpanded(e => !e); return; }
     setGenerating(true);
     setGenError(null);
 
-    const websiteCtx = prospect.hasWebsite
-      ? prospect.websiteType === "link_in_bio"
-        ? `Has a link-in-bio page (${prospect.website}) — NOT a real website`
-        : prospect.websiteType === "weak"
-          ? `Has a weak DIY website (${prospect.website}) — outdated or builder-made`
-          : `Has website: ${prospect.website}`
-      : "No website";
+    // Derive website situation from websiteType directly — don't trust hasWebsite boolean
+    // which can be stale after enrichment or manual edits
+    const wType = prospect.websiteType;
+    const wUrl  = prospect.website;
+    const websiteCtx =
+      wType === "link_in_bio" ? `Has a link-in-bio page (${wUrl}) — NOT a real website, no SEO presence`
+      : wType === "weak"      ? `Has a weak DIY website (${wUrl}) — outdated builder site, poor SEO`
+      : wType === "real"      ? `Has a real website: ${wUrl}`
+      : wUrl                  ? `Has website: ${wUrl}`
+      : "No website — completely invisible online";
 
     const contactInfo = [
       prospect.email       ? `Email: ${prospect.email}` : null,
