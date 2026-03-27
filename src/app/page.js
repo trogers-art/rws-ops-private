@@ -267,7 +267,6 @@ function LoginScreen({ onEnter, onPrepReady }) {
         const candidates  = allResults.filter(p => p.grade === "A" || p.grade === "B").slice(0, 8);
         const rest        = allResults.filter(p => p.grade !== "A" && p.grade !== "B").slice(0, 4);
 
-        // Enrich all A/B candidates
         const enrichedCandidates = await Promise.all(
           candidates.map(async p => {
             const enrichment = await enrichLead(p);
@@ -275,12 +274,10 @@ function LoginScreen({ onEnter, onPrepReady }) {
           })
         );
 
-        // Load existing pipeline to avoid duplication
         const existingPipeline = await loadPipeline();
         const existingNames    = new Set(existingPipeline.map(l => l.name));
         const dismissed        = await loadDismissed();
 
-        // Auto-pipeline: contact found + not already in pipeline + not dismissed
         const toAdd = enrichedCandidates.filter(p =>
           !!(p.email || p.instagram) &&
           !existingNames.has(p.name) &&
@@ -548,8 +545,6 @@ function CopyPanel({ prospect, onSend }) {
     setGenerating(true);
     setGenError(null);
 
-    // Derive website situation from websiteType directly — don't trust hasWebsite boolean
-    // which can be stale after enrichment or manual edits
     const wType = prospect.websiteType;
     const wUrl  = prospect.website;
     const websiteCtx =
@@ -864,6 +859,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{lead.city}</span>
             {lead.grade && <Pill color={gc} sm>Grade {lead.grade}</Pill>}
             {lead.websiteType === "link_in_bio" && <Pill color={C.amber} sm>Link-in-bio</Pill>}
+            {lead.source === "manual" && <Pill color={C.green} sm>Manual</Pill>}
             {lead.manuallyEdited && <Pill color={C.purple} sm>Edited</Pill>}
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 3 }}>
@@ -899,6 +895,183 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
 
       {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
       <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} />
+    </div>
+  );
+}
+
+// ─── ADD LEAD MODAL ───────────────────────────────────────────────────────────
+function AddLeadModal({ onAdd, onClose }) {
+  const EMPTY = {
+    name: "", city: "", phone: "", category: "",
+    email: "", instagramHandle: "", website: "", websiteType: "",
+    grade: "B", notes: "",
+  };
+  const [form,     setForm]     = useState(EMPTY);
+  const [enriching, setEnriching] = useState(false);
+
+  function set(key, val) {
+    setForm(f => ({ ...f, [key]: val }));
+  }
+
+  async function handleEnrich() {
+    if (!form.name.trim()) return;
+    setEnriching(true);
+    const result = await enrichLead({ name: form.name, city: form.city, category: form.category, phone: form.phone, website: form.website });
+    if (result && !result.error) {
+      setForm(f => ({
+        ...f,
+        email:           result.email           || f.email,
+        instagramHandle: result.instagramHandle  || f.instagramHandle,
+        website:         result.website          || f.website,
+        websiteType:     result.websiteType      || f.websiteType,
+        phone:           result.phone            || f.phone,
+      }));
+    }
+    setEnriching(false);
+  }
+
+  function handleSubmit() {
+    if (!form.name.trim()) return;
+    const raw   = form.instagramHandle.replace(/^@/, "");
+    const entry = {
+      id:              `${Date.now()}-${Math.random()}`,
+      status:          "new",
+      addedAt:         new Date().toLocaleDateString(),
+      source:          "manual",
+      name:            form.name.trim(),
+      city:            form.city.trim(),
+      phone:           form.phone.trim() || null,
+      category:        form.category.trim(),
+      email:           form.email.trim() || null,
+      instagramHandle: raw ? `@${raw}` : null,
+      instagram:       raw ? `https://www.instagram.com/${raw}/` : null,
+      website:         form.website.trim() || null,
+      websiteType:     form.websiteType || null,
+      hasWebsite:      !!(form.websiteType && form.websiteType !== "none"),
+      grade:           form.grade,
+      notes:           form.notes.trim(),
+      enriched:        !!(form.email || form.instagramHandle),
+      rating:          0,
+      reviews:         0,
+    };
+    onAdd(entry);
+    onClose();
+  }
+
+  const inputStyle = {
+    width: "100%", boxSizing: "border-box",
+    background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`,
+    borderRadius: 7, padding: "8px 11px",
+    fontFamily: MONO, fontSize: 11, color: C.text, outline: "none",
+  };
+  const labelStyle = {
+    fontFamily: MONO, fontSize: 9, color: C.muted,
+    letterSpacing: "0.1em", textTransform: "uppercase",
+    display: "block", marginBottom: 4,
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 14, width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto", padding: "24px 28px" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Dot color={C.green} size={7} />
+            <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Add Lead Manually</span>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: MONO, fontSize: 18, lineHeight: 1, padding: "0 4px" }}>×</button>
+        </div>
+
+        {/* Business Info */}
+        <div style={{ marginBottom: 14 }}>
+          <Label>Business Info</Label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={labelStyle}>Business Name *</label>
+              <input value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Luisa's Nail Studio" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>City</label>
+              <input value={form.city} onChange={e => set("city", e.target.value)} placeholder="Anaheim" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Category</label>
+              <input value={form.category} onChange={e => set("category", e.target.value)} placeholder="nail salon" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Phone</label>
+              <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="(714) 555-0000" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Grade</label>
+              <select value={form.grade} onChange={e => set("grade", e.target.value)}
+                style={{ ...inputStyle, background: "#0d0f14" }}>
+                <option value="A">A — Perfect fit</option>
+                <option value="B">B — Solid prospect</option>
+                <option value="C">C — Redesign / care plan</option>
+                <option value="D">D — Has a real site</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Contact Info */}
+        <div style={{ marginBottom: 14 }}>
+          <Label>Contact Info</Label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={labelStyle}>Email</label>
+              <input value={form.email} onChange={e => set("email", e.target.value)} placeholder="owner@business.com" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>IG Handle</label>
+              <input value={form.instagramHandle} onChange={e => set("instagramHandle", e.target.value)} placeholder="@handle" style={inputStyle} />
+            </div>
+          </div>
+        </div>
+
+        {/* Web Presence */}
+        <div style={{ marginBottom: 14 }}>
+          <Label>Web Presence</Label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <label style={labelStyle}>Website URL</label>
+              <input value={form.website} onChange={e => set("website", e.target.value)} placeholder="https://..." style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Website Type</label>
+              <select value={form.websiteType} onChange={e => set("websiteType", e.target.value)}
+                style={{ ...inputStyle, background: "#0d0f14" }}>
+                <option value="">None / Unknown</option>
+                <option value="none">No website</option>
+                <option value="link_in_bio">Link-in-bio</option>
+                <option value="weak">Weak DIY site</option>
+                <option value="real">Real website</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Notes */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Notes</label>
+          <textarea value={form.notes} onChange={e => set("notes", e.target.value)}
+            placeholder="e.g. Found on IG, active with reels, no website link in bio" rows={2}
+            style={{ ...inputStyle, resize: "vertical" }} />
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <Btn onClick={handleEnrich} loading={enriching} disabled={!form.name.trim()} color={C.blue} sm>
+            Enrich
+          </Btn>
+          <Btn onClick={onClose} color={C.muted} sm>Cancel</Btn>
+          <Btn onClick={handleSubmit} disabled={!form.name.trim()} color={C.green}>
+            Add to Pipeline
+          </Btn>
+        </div>
+      </div>
     </div>
   );
 }
@@ -952,7 +1125,6 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
       return { ...s, loading: false, prospects: merged, lastSearch: niche };
     });
 
-    // Auto-pipeline: enrich A/B leads from this search that aren't already pipelined
     const candidates = newProspects.filter(p =>
       (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)
     );
@@ -1079,12 +1251,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
               Clear all results
             </button>
             {autoCandidates > 0 && (
-              <Btn
-                onClick={autoPipeline}
-                loading={autoPipelining}
-                color={C.green}
-                sm
-              >
+              <Btn onClick={autoPipeline} loading={autoPipelining} color={C.green} sm>
                 Auto-enrich &amp; Pipeline ({autoCandidates} A/B leads)
               </Btn>
             )}
@@ -1093,7 +1260,6 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
         {error && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "10px 0 0" }}>Error: {error}</p>}
       </Card>
 
-      {/* Auto-pipeline log */}
       {showAutoLog && autoLog.length > 0 && (
         <Card style={{ padding: "14px 18px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -1316,7 +1482,6 @@ function AnalyticsModule({ pipeline }) {
   const outreachLog  = getOutreachLog();
   const nicheHistory = getNicheHistory();
 
-  // Pipeline funnel counts
   const statusCounts = Object.keys(STATUS).reduce((acc, s) => {
     acc[s] = pipeline.filter(l => l.status === s).length;
     return acc;
@@ -1326,7 +1491,6 @@ function AnalyticsModule({ pipeline }) {
   const warm      = pipeline.filter(l => ["warm","closed"].includes(l.status)).length;
   const closed    = pipeline.filter(l => l.status === "closed").length;
 
-  // Outreach last 30 days — build array newest-first
   const outreachDays = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date();
@@ -1344,7 +1508,6 @@ function AnalyticsModule({ pipeline }) {
   const activeDays   = outreachDays.filter(d => d.dms + d.emails > 0).length;
   const maxActivity  = Math.max(...outreachDays.map(d => d.dms + d.emails), 1);
 
-  // Niche performance — aggregate by query
   const nicheMap = {};
   nicheHistory.forEach(({ query, aCount, bCount }) => {
     if (!nicheMap[query]) nicheMap[query] = { searches: 0, aTotal: 0, bTotal: 0 };
@@ -1357,7 +1520,6 @@ function AnalyticsModule({ pipeline }) {
     .sort((a, b) => b.aTotal - a.aTotal)
     .slice(0, 8);
 
-  // Grade breakdown of current pipeline
   const gradeMap = { A: 0, B: 0, C: 0, D: 0 };
   pipeline.forEach(l => { if (l.grade) gradeMap[l.grade]++; });
 
@@ -1365,7 +1527,6 @@ function AnalyticsModule({ pipeline }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
       {dataAge && (
         <div style={{ background: `${C.amber}08`, border: `1px solid ${C.amber}25`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
           <Dot color={C.amber} size={6} />
@@ -1375,13 +1536,11 @@ function AnalyticsModule({ pipeline }) {
         </div>
       )}
 
-      {/* Pipeline funnel */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
           <Dot color={C.green} />
           <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Pipeline Funnel</span>
         </div>
-
         {total === 0 ? (
           <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No pipeline leads yet.</p>
         ) : (
@@ -1400,8 +1559,6 @@ function AnalyticsModule({ pipeline }) {
                 </div>
               ))}
             </div>
-
-            {/* Status bar */}
             <Label>Status Breakdown</Label>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {Object.entries(STATUS).map(([id, st]) => {
@@ -1418,8 +1575,6 @@ function AnalyticsModule({ pipeline }) {
                 );
               })}
             </div>
-
-            {/* Grade breakdown */}
             <Divider />
             <Label>Pipeline Grade Mix</Label>
             <div style={{ display: "flex", gap: 8 }}>
@@ -1434,7 +1589,6 @@ function AnalyticsModule({ pipeline }) {
         )}
       </Card>
 
-      {/* Outreach activity — last 30 days */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1457,12 +1611,10 @@ function AnalyticsModule({ pipeline }) {
             </div>
           </div>
         </div>
-
         {totalDMs + totalEmails === 0 ? (
           <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No outreach logged yet. DMs and emails are tracked automatically when you copy or send from the Pipeline tab.</p>
         ) : (
           <>
-            {/* Bar chart — last 30 days */}
             <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 60, marginBottom: 8 }}>
               {outreachDays.map((d, i) => {
                 const total = d.dms + d.emails;
@@ -1483,13 +1635,11 @@ function AnalyticsModule({ pipeline }) {
         )}
       </Card>
 
-      {/* Niche performance */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
           <Dot color={C.amber} />
           <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Niche Performance</span>
         </div>
-
         {nicheRows.length === 0 ? (
           <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No searches logged yet. Niche data accumulates as you search in the Leads tab.</p>
         ) : (
@@ -1511,15 +1661,15 @@ function AnalyticsModule({ pipeline }) {
           </div>
         )}
       </Card>
-
     </div>
   );
 }
 
 // ─── PIPELINE MODULE ──────────────────────────────────────────────────────────
-function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
-  const [filter,  setFilter]  = useState("all");
-  const [weekLog, setWeekLog] = useState(() => getWeekLog());
+function PipelineModule({ pipeline, onUpdate, onRemove, onAdd, onLogOutreach }) {
+  const [filter,      setFilter]      = useState("all");
+  const [showModal,   setShowModal]   = useState(false);
+  const [weekLog,     setWeekLog]     = useState(() => getWeekLog());
 
   const active    = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
   const closed    = pipeline.filter(l => l.status === "closed").length;
@@ -1553,6 +1703,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
+      {/* Stats row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
         {[
           { label: "Total",     val: pipeline.length, color: C.sub    },
@@ -1567,6 +1718,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
         ))}
       </div>
 
+      {/* Outreach log + Add Lead button */}
       <Card style={{ padding: "16px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div>
@@ -1586,13 +1738,15 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
               </div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Btn onClick={() => setShowModal(true)} color={C.green} sm>+ Add Lead</Btn>
             <Btn onClick={handleLogDM} color={C.purple} sm>+ DM Sent</Btn>
             <Btn onClick={handleLogEmail} color={C.green} sm>+ Email Sent</Btn>
           </div>
         </div>
       </Card>
 
+      {/* Follow-up due */}
       {followUps.length > 0 && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -1624,6 +1778,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
         </div>
       )}
 
+      {/* Status filter */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {[{ id: "all", label: `All (${pipeline.length})` }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: `${s.label} (${pipeline.filter(l => l.status === id).length})` }))].map(f => (
           <button key={f.id} onClick={() => setFilter(f.id)}
@@ -1633,8 +1788,9 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
         ))}
       </div>
 
+      {/* Lead cards */}
       {pipeline.length === 0
-        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet — search in Leads tab and hit + Pipeline</p></Card>
+        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet — search in Leads tab or hit + Add Lead to enter one manually</p></Card>
         : visible.length === 0
           ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
           : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1649,6 +1805,14 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
               ))}
             </div>
       }
+
+      {/* Modal */}
+      {showModal && (
+        <AddLeadModal
+          onAdd={onAdd}
+          onClose={() => setShowModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1670,7 +1834,6 @@ function CommandCenter({ prepData }) {
 
   useEffect(() => {
     if (prepData?.pipeline?.length > 0) {
-      // Login prep already enriched, filtered, and saved to Redis — use it directly
       setPipelineRaw(prepData.pipeline);
       setPipelineLoaded(true);
     } else {
@@ -1757,27 +1920,28 @@ function CommandCenter({ prepData }) {
         <div style={{ display: tab === "calendar"  ? "block" : "none" }}><CalendarModule state={calendarState} setState={setCalendarState} /></div>
         <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} pipeline={pipeline} /></div>
         <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
-        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline} onUpdate={updateLead} onRemove={removeLead} /></div>
+        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead} onRemove={removeLead} onAdd={addToPipeline} /></div>
         <div style={{ display: tab === "analytics" ? "block" : "none" }}><AnalyticsModule pipeline={pipeline} /></div>
       </div>
 
       <style>{`
-        @keyframes blink  {0%,100%{opacity:1}50%{opacity:0.25}}
-        @keyframes ripple {0%{box-shadow:0 0 0 0 rgba(0,230,118,0.45)}100%{box-shadow:0 0 0 12px rgba(0,230,118,0)}}
-        *{box-sizing:border-box} button:hover:not(:disabled){opacity:0.78}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:0.25}}
+        @keyframes ripple{0%{box-shadow:0 0 0 0 rgba(0,230,118,0.45)}100%{box-shadow:0 0 0 12px rgba(0,230,118,0)}}
+        *{box-sizing:border-box} button:hover:not(:disabled){opacity:0.8}
         textarea::placeholder,input::placeholder{color:rgba(255,255,255,0.16)}
+        select option{background:#0d0f14}
+        ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px}
       `}</style>
     </div>
   );
 }
 
 // ─── ROOT ──────────────────────────────────────────────────────────────────────
-export default function Page() {
-  const [unlocked, setUnlocked] = useState(false);
-  const [entered,  setEntered]  = useState(false);
+export default function Home() {
+  const [phase,    setPhase]    = useState("pin");
   const [prepData, setPrepData] = useState(null);
 
-  if (!unlocked) return <PinGate onUnlock={() => setUnlocked(true)} />;
-  if (!entered)  return <LoginScreen onEnter={() => setEntered(true)} onPrepReady={setPrepData} />;
+  if (phase === "pin")   return <PinGate    onUnlock={() => setPhase("login")} />;
+  if (phase === "login") return <LoginScreen onEnter={() => setPhase("app")} onPrepReady={data => setPrepData(data)} />;
   return <CommandCenter prepData={prepData} />;
 }
