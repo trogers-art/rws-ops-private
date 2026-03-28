@@ -150,6 +150,23 @@ async function savePipeline(pipeline) {
   } catch {}
 }
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+// Accepts @handle, handle, or full https://www.instagram.com/handle/ URL
+function parseIgHandle(raw) {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  // Full URL — extract path segment
+  try {
+    if (trimmed.startsWith("http")) {
+      const url = new URL(trimmed);
+      const parts = url.pathname.split("/").filter(Boolean);
+      return parts[0] || "";
+    }
+  } catch {}
+  // Strip leading @
+  return trimmed.replace(/^@/, "");
+}
+
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
 function Pill({ color, children, sm }) {
   return (
@@ -488,9 +505,9 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
         <div>
           <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", letterSpacing: "0.1em", textTransform: "uppercase" }}>IG Handle</p>
           <input value={data.instagramHandle} onChange={e => {
-            const raw = e.target.value.replace(/^@/, "");
-            onChange(d => ({ ...d, instagramHandle: raw ? `@${raw}` : "", instagram: raw ? `https://www.instagram.com/${raw}/` : "" }));
-          }} placeholder="@handle"
+            const handle = parseIgHandle(e.target.value);
+            onChange(d => ({ ...d, instagramHandle: handle ? `@${handle}` : "", instagram: handle ? `https://www.instagram.com/${handle}/` : "" }));
+          }} placeholder="@handle or paste URL"
             style={{ width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" }} />
         </div>
         <div>
@@ -525,26 +542,52 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
 }
 
 // ─── SHARED: COPY PANEL ───────────────────────────────────────────────────────
+// mode: "cold" | "followup" | "pitch"
 function CopyPanel({ prospect, onSend }) {
-  const [draft,      setDraft]      = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const [genError,   setGenError]   = useState(null);
-  const [sending,    setSending]    = useState(false);
-  const [sendResult, setSendResult] = useState(null);
-  const [showSend,   setShowSend]   = useState(false);
-  const [expanded,   setExpanded]   = useState(false);
+  // ── Cold copy state ──
+  const [coldDraft,      setColdDraft]      = useState(null);
+  const [coldGenerating, setColdGenerating] = useState(false);
+  const [coldError,      setColdError]      = useState(null);
+  const [coldExpanded,   setColdExpanded]   = useState(false);
+  const [coldSending,    setColdSending]    = useState(false);
+  const [coldSendResult, setColdSendResult] = useState(null);
+  const [coldShowSend,   setColdShowSend]   = useState(false);
 
+  // ── Follow-up copy state ──
+  const [fuDraft,      setFuDraft]      = useState(null);
+  const [fuGenerating, setFuGenerating] = useState(false);
+  const [fuError,      setFuError]      = useState(null);
+  const [fuExpanded,   setFuExpanded]   = useState(false);
+  const [fuSending,    setFuSending]    = useState(false);
+  const [fuSendResult, setFuSendResult] = useState(null);
+  const [fuShowSend,   setFuShowSend]   = useState(false);
+
+  // ── Pitch state ──
+  const [showPitchForm,  setShowPitchForm]  = useState(false);
+  const [pitchDraft,     setPitchDraft]     = useState(null);
+  const [pitchGenerating,setPitchGenerating]= useState(false);
+  const [pitchError,     setPitchError]     = useState(null);
+  const [pitchExpanded,  setPitchExpanded]  = useState(false);
+  const [pitchSending,   setPitchSending]   = useState(false);
+  const [pitchSendResult,setPitchSendResult]= useState(null);
+  const [pitchShowSend,  setPitchShowSend]  = useState(false);
+  const [pitchForm,      setPitchForm]      = useState({
+    source:    "cold_dm",
+    painPoint: "",
+    package:   "care",
+    timeline:  "flexible",
+    notes:     "",
+  });
+
+  // Reset cold + followup drafts when lead data changes
   useEffect(() => {
-    setDraft(null);
-    setExpanded(false);
-    setGenError(null);
+    setColdDraft(null); setColdExpanded(false); setColdError(null);
+    setFuDraft(null);   setFuExpanded(false);   setFuError(null);
+    setPitchDraft(null);setPitchExpanded(false);setPitchError(null);
   }, [prospect.name, prospect.email, prospect.instagram, prospect.websiteType, prospect.website, prospect.hasWebsite, prospect.notes]);
 
-  async function generate() {
-    if (draft) { setExpanded(e => !e); return; }
-    setGenerating(true);
-    setGenError(null);
-
+  // ── Shared helpers ──
+  function buildLeadCtx() {
     const wType = prospect.websiteType;
     const wUrl  = prospect.website;
     const websiteCtx =
@@ -553,117 +596,332 @@ function CopyPanel({ prospect, onSend }) {
       : wType === "real"      ? `Has a real website: ${wUrl}`
       : wUrl                  ? `Has website: ${wUrl}`
       : "No website — completely invisible online";
-
     const contactInfo = [
-      prospect.email       ? `Email: ${prospect.email}` : null,
-      prospect.instagram   ? `Instagram: ${prospect.instagram} (${prospect.instagramHandle})` : null,
-      prospect.phone       ? `Phone: ${prospect.phone}` : null,
+      prospect.email     ? `Email: ${prospect.email}` : null,
+      prospect.instagram ? `Instagram: ${prospect.instagram} (${prospect.instagramHandle})` : null,
+      prospect.phone     ? `Phone: ${prospect.phone}` : null,
     ].filter(Boolean).join(" | ");
+    return `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}★ | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Notes: ${prospect.notes}` : ""}`;
+  }
 
+  // ── Cold copy ──
+  async function generateCold() {
+    if (coldDraft) { setColdExpanded(e => !e); return; }
+    setColdGenerating(true); setColdError(null);
     try {
       const raw = await ai(
         RWS_CTX + `\n\nWrite an IG DM and cold email for this REAL business. Return ONLY valid JSON, no backticks:
-{"dm":"3-4 sentences. Casual Instagram DM. Reference real rating and review count. Be precise about web presence — if link-in-bio say that, if weak site say that, if no site say that. Close with rogers-websolutions.com/book. Sound like a real person. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Subject using their real data points","emailBody":"Cold email. Open with their real numbers. Address the exact web presence gap accurately. 3-4 short paragraphs. Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
-        `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}★ | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
+{"dm":"3-4 sentences. Casual Instagram DM. Reference real rating and review count. Be precise about web presence. Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Subject using their real data points","emailBody":"Cold email. Open with their real numbers. 3-4 short paragraphs. Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+        buildLeadCtx()
       );
-
-      if (raw.startsWith("Error:")) {
-        setGenError(raw);
-      } else {
-        try { setDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
-        catch { setDraft({ dm: raw, emailSubject: `${prospect.name} — ${prospect.reviews} reviews`, emailBody: raw }); }
-        setExpanded(true);
+      if (raw.startsWith("Error:")) { setColdError(raw); }
+      else {
+        try { setColdDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
+        catch { setColdDraft({ dm: raw, emailSubject: `${prospect.name} — ${prospect.reviews} reviews`, emailBody: raw }); }
+        setColdExpanded(true);
       }
-    } catch (e) {
-      setGenError(`Error: ${e.message}`);
-    }
-    setGenerating(false);
+    } catch (e) { setColdError(`Error: ${e.message}`); }
+    setColdGenerating(false);
   }
 
-  async function handleSend() {
-    if (!prospect.email || !draft) return;
-    setSending(true); setSendResult(null);
-    const result = await sendEmail(prospect.email, draft.emailSubject, draft.emailBody);
-    setSending(false);
-    if (result.success) {
-      setSendResult("sent");
-      logOutreach("emails");
-      if (onSend) onSend();
-    } else {
-      setSendResult(result.error || "unknown error");
-    }
+  async function sendCold() {
+    if (!prospect.email || !coldDraft) return;
+    setColdSending(true); setColdSendResult(null);
+    const result = await sendEmail(prospect.email, coldDraft.emailSubject, coldDraft.emailBody);
+    setColdSending(false);
+    if (result.success) { setColdSendResult("sent"); logOutreach("emails"); if (onSend) onSend(); }
+    else { setColdSendResult(result.error || "unknown error"); }
   }
+
+  // ── Follow-up copy ──
+  async function generateFollowUp() {
+    if (fuDraft) { setFuExpanded(e => !e); return; }
+    setFuGenerating(true); setFuError(null);
+    const bumpNum   = prospect.status === "followup" ? "second" : "first";
+    const daysSince = prospect.contactedAt
+      ? Math.floor((Date.now() - new Date(prospect.contactedAt).getTime()) / 86400000)
+      : null;
+    const timingCtx = daysSince !== null ? `${daysSince} days since last contact` : "timing unknown";
+    try {
+      const raw = await ai(
+        RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up — ${timingCtx}. They haven't replied. Keep it brief, no pressure, re-reference their specific situation. Return ONLY valid JSON, no backticks:
+{"dm":"2-3 sentences max. Casual, not pushy. Reference the original reason you reached out. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Short follow-up subject line","emailBody":"Follow-up email. 2-3 short paragraphs. Acknowledge no reply, re-state the value, soft ask. Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+        buildLeadCtx() + ` | Follow-up: ${bumpNum} bump | ${timingCtx}`
+      );
+      if (raw.startsWith("Error:")) { setFuError(raw); }
+      else {
+        try { setFuDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
+        catch { setFuDraft({ dm: raw, emailSubject: `Following up — ${prospect.name}`, emailBody: raw }); }
+        setFuExpanded(true);
+      }
+    } catch (e) { setFuError(`Error: ${e.message}`); }
+    setFuGenerating(false);
+  }
+
+  async function sendFollowUp() {
+    if (!prospect.email || !fuDraft) return;
+    setFuSending(true); setFuSendResult(null);
+    const result = await sendEmail(prospect.email, fuDraft.emailSubject, fuDraft.emailBody);
+    setFuSending(false);
+    if (result.success) { setFuSendResult("sent"); logOutreach("emails"); if (onSend) onSend(); }
+    else { setFuSendResult(result.error || "unknown error"); }
+  }
+
+  // ── Pitch ──
+  const PACKAGES = {
+    starter: "Starter Site — $500 one-time (up to 4 pages, ~1 week)",
+    care:    "Site + Care — $750 build + $200/mo (hosting, maintenance, unlimited edits)",
+    custom:  "Custom scope (discuss on call)",
+  };
+  const SOURCES  = { cold_dm: "Cold DM", cold_email: "Cold Email", referral: "Referral", inbound: "Inbound inquiry" };
+  const TIMELINES = { flexible: "Flexible", month: "Within a month", asap: "ASAP" };
+
+  async function generatePitch() {
+    if (pitchDraft) { setPitchExpanded(e => !e); return; }
+    if (!pitchForm.painPoint.trim()) return;
+    setPitchGenerating(true); setPitchError(null);
+    try {
+      const raw = await ai(
+        RWS_CTX + `\n\nCreate a tailored pitch for this lead. Return ONLY valid JSON, no backticks:
+{"talkingPoints":"4-6 bullet points as a single string, each on its own line starting with •. Specific to their situation. Reference their actual numbers. Map their pain point to RWS's solution. Include the package and pricing naturally. Conversational — these are call talking points, not a formal doc.","emailSubject":"Proposal email subject line — specific to them","emailBody":"Proposal email. Open by referencing how you connected. 3-4 paragraphs. Address their specific pain point. Pitch the package with pricing. Close with a soft CTA to book at rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+        buildLeadCtx() + ` | How they came in: ${SOURCES[pitchForm.source]} | Pain point: ${pitchForm.painPoint} | Package to pitch: ${PACKAGES[pitchForm.package]} | Timeline: ${TIMELINES[pitchForm.timeline]}${pitchForm.notes ? ` | Additional context: ${pitchForm.notes}` : ""}`
+      );
+      if (raw.startsWith("Error:")) { setPitchError(raw); }
+      else {
+        try { setPitchDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
+        catch { setPitchDraft({ talkingPoints: raw, emailSubject: `Proposal — ${prospect.name}`, emailBody: raw }); }
+        setPitchExpanded(true);
+        setShowPitchForm(false);
+      }
+    } catch (e) { setPitchError(`Error: ${e.message}`); }
+    setPitchGenerating(false);
+  }
+
+  async function sendPitch() {
+    if (!prospect.email || !pitchDraft) return;
+    setPitchSending(true); setPitchSendResult(null);
+    const result = await sendEmail(prospect.email, pitchDraft.emailSubject, pitchDraft.emailBody);
+    setPitchSending(false);
+    if (result.success) { setPitchSendResult("sent"); logOutreach("emails"); if (onSend) onSend(); }
+    else { setPitchSendResult(result.error || "unknown error"); }
+  }
+
+  // ── Reusable email send block ──
+  function SendBlock({ draft, showSend, setShowSend, sending, onSend: handleSend, sendResult }) {
+    if (!showSend) return null;
+    return (
+      <div style={{ marginTop: 10 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 12px", background: "rgba(0,0,0,0.3)", border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 8 }}>
+          <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", whiteSpace: "nowrap", paddingTop: 1 }}>SUBJECT</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, lineHeight: 1.5, wordBreak: "break-word" }}>{draft?.emailSubject}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
+          <Dot color={C.green} size={5} />
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>To: {prospect.email}</span>
+        </div>
+        <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
+        {sendResult === "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
+        {sendResult && sendResult !== "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed: {sendResult}</p>}
+      </div>
+    );
+  }
+
+  const selectStyle = { width: "100%", boxSizing: "border-box", background: "#0d0f14", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" };
+  const inputStyle  = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "7px 10px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" };
+  const microLabel  = { fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 4 };
+
+  const showFuBtn = ["contacted","followup","warm"].includes(prospect.status);
 
   return (
     <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px" }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: expanded && draft ? 14 : 0 }}>
-        <Btn onClick={generate} loading={generating} color={C.amber} sm>
-          {draft ? (expanded ? "Hide Copy" : "Show Copy") : "Get Copy"}
+
+      {/* ── Button row ── */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: (coldExpanded || fuExpanded || showPitchForm || pitchExpanded) ? 14 : 0 }}>
+        <Btn onClick={generateCold} loading={coldGenerating} color={C.amber} sm>
+          {coldDraft ? (coldExpanded ? "Hide Copy" : "Show Copy") : "Get Copy"}
         </Btn>
-        {genError && (
-          <Btn onClick={() => { setGenError(null); generate(); }} color={C.red} sm>Retry</Btn>
+        {showFuBtn && (
+          <Btn onClick={generateFollowUp} loading={fuGenerating} color={C.blue} sm>
+            {fuDraft ? (fuExpanded ? "Hide Follow-up" : "Show Follow-up") : "Follow-up Copy"}
+          </Btn>
+        )}
+        <Btn onClick={() => { setShowPitchForm(f => !f); if (pitchDraft) setPitchExpanded(false); }} color={C.green} sm>
+          {showPitchForm ? "Cancel Pitch" : pitchDraft ? "Edit Pitch" : "Create Pitch"}
+        </Btn>
+        {(coldError || fuError || pitchError) && (
+          <Btn onClick={() => { setColdError(null); setFuError(null); setPitchError(null); }} color={C.red} sm>Clear Errors</Btn>
         )}
       </div>
 
-      {genError && (
-        <div style={{ marginTop: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} — hit Retry to try again</span>
-        </div>
-      )}
+      {/* ── Errors ── */}
+      {coldError && <div style={{ marginBottom: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}><span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{coldError}</span></div>}
+      {fuError   && <div style={{ marginBottom: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}><span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{fuError}</span></div>}
+      {pitchError && <div style={{ marginBottom: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}><span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{pitchError}</span></div>}
 
-      {expanded && draft && (
-        <>
-          {/* IG DM */}
-          <div style={{ marginBottom: 14 }}>
+      {/* ── Cold copy output ── */}
+      {coldExpanded && coldDraft && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <Dot color={C.amber} size={5} />
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, letterSpacing: "0.1em", textTransform: "uppercase" }}>Cold Outreach</span>
+          </div>
+          {/* DM */}
+          <div style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>IG DM</Label>
               <div style={{ display: "flex", gap: 6 }}>
-                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={() => logOutreach("dms")} />
-                {prospect.instagram && (
-                  <a href={prospect.instagram} target="_blank" rel="noreferrer"
-                    style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>
-                    Open IG
-                  </a>
-                )}
+                <CopyBtn text={coldDraft.dm} label="Copy DM" sm onCopy={() => logOutreach("dms")} />
+                {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>Open IG</a>}
               </div>
             </div>
-            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{coldDraft.dm}</div>
           </div>
-
-          {/* Cold Email */}
+          {/* Email */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Cold Email</Label>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
+                <CopyBtn text={`Subject: ${coldDraft.emailSubject}\n\n${coldDraft.emailBody}`} label="Copy" sm />
                 {prospect.email
-                  ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Cancel" : "Send via Gmail"}</Btn>
-                  : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email in Edit to send</span>
+                  ? <Btn onClick={() => setColdShowSend(f => !f)} color={C.green} sm>{coldShowSend ? "Cancel" : "Send via Gmail"}</Btn>
+                  : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email to send</span>
                 }
               </div>
             </div>
-            <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
-            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
-
-            {showSend && prospect.email && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 12px", background: "rgba(0,0,0,0.3)", border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 8 }}>
-                  <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", whiteSpace: "nowrap", paddingTop: 1 }}>SUBJECT</span>
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, lineHeight: 1.5, wordBreak: "break-word" }}>{draft.emailSubject}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
-                  <Dot color={C.green} size={5} />
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>To: {prospect.email}</span>
-                </div>
-                <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
-              </div>
-            )}
-
-            {sendResult === "sent"  && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
-            {sendResult && sendResult !== "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed: {sendResult}</p>}
+            <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {coldDraft.emailSubject}</div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{coldDraft.emailBody}</div>
+            {prospect.email && <SendBlock draft={coldDraft} showSend={coldShowSend} setShowSend={setColdShowSend} sending={coldSending} onSend={sendCold} sendResult={coldSendResult} />}
           </div>
-        </>
+        </div>
       )}
+
+      {/* ── Follow-up copy output ── */}
+      {fuExpanded && fuDraft && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <Dot color={C.blue} size={5} />
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+              Follow-up — {prospect.status === "followup" ? "2nd Bump" : "1st Bump"}
+              {prospect.contactedAt && ` · ${Math.floor((Date.now() - new Date(prospect.contactedAt).getTime()) / 86400000)}d since contact`}
+            </span>
+          </div>
+          {/* DM */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Label>Follow-up DM</Label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <CopyBtn text={fuDraft.dm} label="Copy DM" sm onCopy={() => logOutreach("dms")} />
+                {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>Open IG</a>}
+              </div>
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{fuDraft.dm}</div>
+          </div>
+          {/* Email */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Label>Follow-up Email</Label>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <CopyBtn text={`Subject: ${fuDraft.emailSubject}\n\n${fuDraft.emailBody}`} label="Copy" sm />
+                {prospect.email
+                  ? <Btn onClick={() => setFuShowSend(f => !f)} color={C.green} sm>{fuShowSend ? "Cancel" : "Send via Gmail"}</Btn>
+                  : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email to send</span>
+                }
+              </div>
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {fuDraft.emailSubject}</div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{fuDraft.emailBody}</div>
+            {prospect.email && <SendBlock draft={fuDraft} showSend={fuShowSend} setShowSend={setFuShowSend} sending={fuSending} onSend={sendFollowUp} sendResult={fuSendResult} />}
+          </div>
+        </div>
+      )}
+
+      {/* ── Pitch form ── */}
+      {showPitchForm && (
+        <div style={{ marginBottom: 16, background: `${C.green}06`, border: `1px solid ${C.green}20`, borderRadius: 10, padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <Dot color={C.green} size={5} />
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.green, letterSpacing: "0.1em", textTransform: "uppercase" }}>Create Pitch — {prospect.name}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <div>
+              <label style={microLabel}>How they came in</label>
+              <select value={pitchForm.source} onChange={e => setPitchForm(f => ({ ...f, source: e.target.value }))} style={selectStyle}>
+                <option value="cold_dm">Cold DM</option>
+                <option value="cold_email">Cold Email</option>
+                <option value="referral">Referral</option>
+                <option value="inbound">Inbound inquiry</option>
+              </select>
+            </div>
+            <div>
+              <label style={microLabel}>Package to pitch</label>
+              <select value={pitchForm.package} onChange={e => setPitchForm(f => ({ ...f, package: e.target.value }))} style={selectStyle}>
+                <option value="starter">Starter — $500</option>
+                <option value="care">Site + Care — $750 + $200/mo</option>
+                <option value="custom">Custom scope</option>
+              </select>
+            </div>
+            <div>
+              <label style={microLabel}>Timeline urgency</label>
+              <select value={pitchForm.timeline} onChange={e => setPitchForm(f => ({ ...f, timeline: e.target.value }))} style={selectStyle}>
+                <option value="flexible">Flexible</option>
+                <option value="month">Within a month</option>
+                <option value="asap">ASAP</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <label style={microLabel}>Pain point identified *</label>
+            <textarea value={pitchForm.painPoint} onChange={e => setPitchForm(f => ({ ...f, painPoint: e.target.value }))}
+              placeholder="e.g. Losing bookings to competitors with websites, all traffic goes to Yelp" rows={2}
+              style={{ ...inputStyle, resize: "vertical" }} />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={microLabel}>Additional notes</label>
+            <textarea value={pitchForm.notes} onChange={e => setPitchForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="Anything else Claude should know — their goals, objections, what they liked" rows={2}
+              style={{ ...inputStyle, resize: "vertical" }} />
+          </div>
+          <Btn onClick={generatePitch} loading={pitchGenerating} disabled={!pitchForm.painPoint.trim()} color={C.green}>
+            Generate Pitch
+          </Btn>
+        </div>
+      )}
+
+      {/* ── Pitch output ── */}
+      {pitchExpanded && pitchDraft && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <Dot color={C.green} size={5} />
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.green, letterSpacing: "0.1em", textTransform: "uppercase" }}>Pitch — {prospect.name}</span>
+            <Btn onClick={() => { setPitchExpanded(false); setShowPitchForm(true); }} color={C.muted} sm>Regenerate</Btn>
+          </div>
+          {/* Talking points */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Label>Talking Points</Label>
+              <CopyBtn text={pitchDraft.talkingPoints} label="Copy" sm />
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.85, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.green}20`, whiteSpace: "pre-wrap" }}>{pitchDraft.talkingPoints}</div>
+          </div>
+          {/* Proposal email */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Label>Proposal Email</Label>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <CopyBtn text={`Subject: ${pitchDraft.emailSubject}\n\n${pitchDraft.emailBody}`} label="Copy" sm />
+                {prospect.email
+                  ? <Btn onClick={() => setPitchShowSend(f => !f)} color={C.green} sm>{pitchShowSend ? "Cancel" : "Send via Gmail"}</Btn>
+                  : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email to send</span>
+                }
+              </div>
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {pitchDraft.emailSubject}</div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{pitchDraft.emailBody}</div>
+            {prospect.email && <SendBlock draft={pitchDraft} showSend={pitchShowSend} setShowSend={setPitchShowSend} sending={pitchSending} onSend={sendPitch} sendResult={pitchSendResult} />}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -932,7 +1190,7 @@ function AddLeadModal({ onAdd, onClose }) {
 
   function handleSubmit() {
     if (!form.name.trim()) return;
-    const raw   = form.instagramHandle.replace(/^@/, "");
+    const raw   = parseIgHandle(form.instagramHandle);
     const entry = {
       id:              `${Date.now()}-${Math.random()}`,
       status:          "new",
@@ -1026,7 +1284,7 @@ function AddLeadModal({ onAdd, onClose }) {
             </div>
             <div>
               <label style={labelStyle}>IG Handle</label>
-              <input value={form.instagramHandle} onChange={e => set("instagramHandle", e.target.value)} placeholder="@handle" style={inputStyle} />
+              <input value={form.instagramHandle} onChange={e => set("instagramHandle", e.target.value)} placeholder="@handle or paste URL" style={inputStyle} />
             </div>
           </div>
         </div>
@@ -1665,6 +1923,141 @@ function AnalyticsModule({ pipeline }) {
   );
 }
 
+// ─── FOLLOW-UP BANNER CARD ────────────────────────────────────────────────────
+function FollowUpBannerCard({ lead, fu, onStatusChange }) {
+  const [showCopy,    setShowCopy]    = useState(false);
+  const [draft,       setDraft]       = useState(null);
+  const [generating,  setGenerating]  = useState(false);
+  const [error,       setError]       = useState(null);
+  const [sending,     setSending]     = useState(false);
+  const [sendResult,  setSendResult]  = useState(null);
+  const [showSend,    setShowSend]    = useState(false);
+
+  const bumpNum   = lead.status === "followup" ? "second" : "first";
+  const daysSince = lead.contactedAt
+    ? Math.floor((Date.now() - new Date(lead.contactedAt).getTime()) / 86400000)
+    : null;
+
+  async function generate() {
+    if (draft) { setShowCopy(e => !e); return; }
+    setGenerating(true); setError(null);
+    const wType = lead.websiteType;
+    const wUrl  = lead.website;
+    const websiteCtx =
+      wType === "link_in_bio" ? `Has a link-in-bio page (${wUrl}) — NOT a real website`
+      : wType === "weak"      ? `Has a weak DIY website (${wUrl})`
+      : wType === "real"      ? `Has a real website: ${wUrl}`
+      : wUrl                  ? `Has website: ${wUrl}`
+      : "No website";
+    const ctx = `Business: ${lead.name} | City: ${lead.city} | Category: ${lead.category} | Rating: ${lead.rating}★ | Reviews: ${lead.reviews} | ${websiteCtx}${lead.notes ? ` | Notes: ${lead.notes}` : ""} | Follow-up: ${bumpNum} bump${daysSince !== null ? ` | ${daysSince} days since contact` : ""}`;
+    try {
+      const raw = await ai(
+        RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up${daysSince !== null ? ` — ${daysSince} days since last contact` : ""}. They haven't replied. Brief, no pressure. Return ONLY valid JSON, no backticks:
+{"dm":"2-3 sentences. Casual, not pushy. Re-reference their situation. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Short follow-up subject","emailBody":"2-3 paragraphs. Acknowledge no reply. Re-state the value. Soft CTA to rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+        ctx
+      );
+      if (raw.startsWith("Error:")) { setError(raw); }
+      else {
+        try { setDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
+        catch { setDraft({ dm: raw, emailSubject: `Following up — ${lead.name}`, emailBody: raw }); }
+        setShowCopy(true);
+      }
+    } catch (e) { setError(`Error: ${e.message}`); }
+    setGenerating(false);
+  }
+
+  async function handleSend() {
+    if (!lead.email || !draft) return;
+    setSending(true); setSendResult(null);
+    const result = await sendEmail(lead.email, draft.emailSubject, draft.emailBody);
+    setSending(false);
+    if (result.success) { setSendResult("sent"); logOutreach("emails"); onStatusChange(lead.id, "followup"); }
+    else { setSendResult(result.error || "unknown error"); }
+  }
+
+  return (
+    <div style={{ background: `${C.red}08`, border: `1px solid ${C.red}30`, borderRadius: 10, overflow: "hidden" }}>
+      {/* Header row */}
+      <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+            <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{lead.name}</span>
+            {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || "IG"}</a>}
+            {lead.phone && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{lead.phone}</span>}
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Btn sm color={C.blue} loading={generating} onClick={generate}>
+            {draft ? (showCopy ? "Hide Copy" : "Show Copy") : "Get Copy"}
+          </Btn>
+          <Btn sm color={C.amber} onClick={() => onStatusChange(lead.id, "followup")}>Mark Sent</Btn>
+          <Btn sm color={C.green} onClick={() => onStatusChange(lead.id, "warm")}>Mark Warm</Btn>
+          <Btn sm color={C.red}   onClick={() => onStatusChange(lead.id, "cold")}>Mark Cold</Btn>
+        </div>
+      </div>
+
+      {/* Copy output */}
+      {error && (
+        <div style={{ margin: "0 16px 12px", padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{error}</span>
+        </div>
+      )}
+      {showCopy && draft && (
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <Dot color={C.blue} size={5} />
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+              {bumpNum === "second" ? "2nd Bump" : "1st Bump"}{daysSince !== null ? ` · ${daysSince}d since contact` : ""}
+            </span>
+          </div>
+          {/* DM */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Label>Follow-up DM</Label>
+              <div style={{ display: "flex", gap: 6 }}>
+                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={() => logOutreach("dms")} />
+                {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>Open IG</a>}
+              </div>
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
+          </div>
+          {/* Email */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Label>Follow-up Email</Label>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
+                {lead.email
+                  ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Cancel" : "Send via Gmail"}</Btn>
+                  : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email to send</span>
+                }
+              </div>
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
+            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
+            {showSend && lead.email && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 12px", background: "rgba(0,0,0,0.3)", border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 8 }}>
+                  <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", whiteSpace: "nowrap", paddingTop: 1 }}>SUBJECT</span>
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, lineHeight: 1.5, wordBreak: "break-word" }}>{draft.emailSubject}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
+                  <Dot color={C.green} size={5} />
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>To: {lead.email}</span>
+                </div>
+                <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
+              </div>
+            )}
+            {sendResult === "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
+            {sendResult && sendResult !== "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed: {sendResult}</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── PIPELINE MODULE ──────────────────────────────────────────────────────────
 function PipelineModule({ pipeline, onUpdate, onRemove, onAdd, onLogOutreach }) {
   const [filter,      setFilter]      = useState("all");
@@ -1757,21 +2150,12 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd, onLogOutreach }) 
             {followUps.map(l => {
               const fu = followUpStatus(l);
               return (
-                <div key={l.id} style={{ background: `${C.red}08`, border: `1px solid ${C.red}30`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                      <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{l.name}</span>
-                      {l.instagram && <a href={l.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{l.instagramHandle || "IG"}</a>}
-                      {l.phone && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{l.phone}</span>}
-                    </div>
-                    <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <Btn sm color={C.amber} onClick={() => handleStatusChange(l.id, "followup")}>Mark Follow-up Sent</Btn>
-                    <Btn sm color={C.green}  onClick={() => handleStatusChange(l.id, "warm")}>Mark Warm</Btn>
-                    <Btn sm color={C.red}    onClick={() => handleStatusChange(l.id, "cold")}>Mark Cold</Btn>
-                  </div>
-                </div>
+                <FollowUpBannerCard
+                  key={l.id}
+                  lead={l}
+                  fu={fu}
+                  onStatusChange={handleStatusChange}
+                />
               );
             })}
           </div>
@@ -1884,29 +2268,36 @@ function CommandCenter({ prepData }) {
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: BODY, backgroundImage: `radial-gradient(ellipse 70% 35% at 10% 0%, rgba(0,230,118,0.03) 0%, transparent 50%)` }}>
-      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "0 24px" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {/* ── Top bar ── */}
+      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "0 16px" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 48, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
             <Dot color={C.green} pulse size={8} />
-            <span style={{ fontFamily: MONO, fontSize: 12, color: C.text, letterSpacing: "0.04em" }}>RWS Command</span>
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>· ops.rogers-websolutions.com</span>
+            <span style={{ fontFamily: MONO, fontSize: 12, color: C.text, letterSpacing: "0.04em", whiteSpace: "nowrap" }}>RWS Command</span>
+            <span className="rws-hide-mobile" style={{ fontFamily: MONO, fontSize: 10, color: C.muted, whiteSpace: "nowrap" }}>· ops.rogers-websolutions.com</span>
           </div>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div className="rws-hide-mobile" style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
             {[{ c: C.green, l: "Gmail" }, { c: C.blue, l: "GCal" }, { c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
-              <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <Dot color={s.c} size={5} />
                 <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{s.l}</span>
               </div>
             ))}
           </div>
+          {/* Mobile: just show pipeline status dot */}
+          <div className="rws-show-mobile" style={{ display: "none", alignItems: "center", gap: 5, flexShrink: 0 }}>
+            <Dot color={pipelineLoaded ? C.green : C.amber} size={5} />
+            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>Pipeline</span>
+          </div>
         </div>
       </div>
 
-      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "0 24px" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", gap: 2 }}>
+      {/* ── Tab row — horizontally scrollable on mobile ── */}
+      <div style={{ borderBottom: `1px solid ${C.border}`, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", gap: 0, padding: "0 8px", minWidth: "max-content" }}>
           {tabs.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: MONO, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", padding: "13px 16px", border: "none", background: "transparent", cursor: "pointer", color: tab === t.id ? C.text : C.muted, borderBottom: `2px solid ${tab === t.id ? t.dot : "transparent"}`, transition: "all 0.15s" }}>
+              style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", padding: "12px 12px", border: "none", background: "transparent", cursor: "pointer", color: tab === t.id ? C.text : C.muted, borderBottom: `2px solid ${tab === t.id ? t.dot : "transparent"}`, transition: "all 0.15s", whiteSpace: "nowrap", flexShrink: 0 }}>
               <Dot color={tab === t.id ? t.dot : C.muted} size={5} />
               {t.label}
               {t.badge && <span style={{ fontFamily: MONO, fontSize: 9, padding: "1px 6px", borderRadius: 10, background: `${C.green}20`, color: C.green, border: `1px solid ${C.green}30` }}>{t.badge}</span>}
@@ -1915,7 +2306,7 @@ function CommandCenter({ prepData }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 24px" }}>
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "20px 16px" }}>
         <div style={{ display: tab === "email"     ? "block" : "none" }}><EmailModule    state={emailState}    setState={setEmailState} /></div>
         <div style={{ display: tab === "calendar"  ? "block" : "none" }}><CalendarModule state={calendarState} setState={setCalendarState} /></div>
         <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} pipeline={pipeline} /></div>
@@ -1931,6 +2322,10 @@ function CommandCenter({ prepData }) {
         textarea::placeholder,input::placeholder{color:rgba(255,255,255,0.16)}
         select option{background:#0d0f14}
         ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px}
+        @media(max-width:600px){
+          .rws-hide-mobile{display:none!important}
+          .rws-show-mobile{display:flex!important}
+        }
       `}</style>
     </div>
   );
