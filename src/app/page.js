@@ -644,8 +644,8 @@ function CopyPanel({ prospect, onSend }) {
     const timingCtx = daysSince !== null ? `${daysSince} days since last contact` : "timing unknown";
     try {
       const raw = await ai(
-        RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up — ${timingCtx}. They haven't replied. Keep it brief, no pressure, re-reference their specific situation. Return ONLY valid JSON, no backticks:
-{"dm":"2-3 sentences max. Casual, not pushy. Reference the original reason you reached out. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Short follow-up subject line","emailBody":"Follow-up email. 2-3 short paragraphs. Acknowledge no reply, re-state the value, soft ask. Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+        RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up — ${timingCtx}. They haven't replied. Tone rules: genuinely casual, one soft touch, no urgency language, no repeating the pain point twice, no filler openers like "no worries if you've been busy". Reference their situation once, briefly. Leave the door open. Return ONLY valid JSON, no backticks:
+{"dm":"2 sentences max. Mention you reached out, leave it open. No pressure language. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Short low-key subject — not salesy","emailBody":"3 short paragraphs max. First: brief callback to the original outreach, one sentence. Second: one specific observation about their business — not repeated urgency. Third: soft CTA to rogers-websolutions.com/book, no pressure. NEVER use phrases like: lost bookings every day, you are missing out, most clients search online first, no worries if you have been busy. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
         buildLeadCtx() + ` | Follow-up: ${bumpNum} bump | ${timingCtx}`
       );
       if (raw.startsWith("Error:")) { setFuError(raw); }
@@ -1952,8 +1952,8 @@ function FollowUpBannerCard({ lead, fu, onStatusChange }) {
     const ctx = `Business: ${lead.name} | City: ${lead.city} | Category: ${lead.category} | Rating: ${lead.rating}★ | Reviews: ${lead.reviews} | ${websiteCtx}${lead.notes ? ` | Notes: ${lead.notes}` : ""} | Follow-up: ${bumpNum} bump${daysSince !== null ? ` | ${daysSince} days since contact` : ""}`;
     try {
       const raw = await ai(
-        RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up${daysSince !== null ? ` — ${daysSince} days since last contact` : ""}. They haven't replied. Brief, no pressure. Return ONLY valid JSON, no backticks:
-{"dm":"2-3 sentences. Casual, not pushy. Re-reference their situation. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Short follow-up subject","emailBody":"2-3 paragraphs. Acknowledge no reply. Re-state the value. Soft CTA to rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+        RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up${daysSince !== null ? ` — ${daysSince} days since last contact` : ""}. They haven't replied. Tone rules: genuinely casual, one soft touch, no urgency language, no repeating the pain point twice, no filler openers like "no worries if you've been busy". Reference their situation once, briefly. Leave the door open. Return ONLY valid JSON, no backticks:
+{"dm":"2 sentences max. Mention you reached out, leave it open. No pressure language. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Short low-key subject — not salesy","emailBody":"3 short paragraphs max. First: brief callback to original outreach, one sentence. Second: one specific observation about their business — not repeated urgency. Third: soft CTA to rogers-websolutions.com/book, no pressure. NEVER use phrases like: lost bookings every day, you are missing out, most clients search online first, no worries if you have been busy. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
         ctx
       );
       if (raw.startsWith("Error:")) { setError(raw); }
