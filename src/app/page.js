@@ -53,10 +53,10 @@ TRAFTON'S VOICE — follow this exactly:
 - NEVER invent data. Only use facts provided about the actual business.
 
 EMAIL SIGNATURE — always end emails with exactly this, on its own line:
-Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com
+Trafton Rogers | RWS | trogers@rogers-websolutions.com
 
 DM SIGN-OFF — always end DMs with this on its own line:
-Trafton @ Rogers Web Solutions`;
+Trafton Rogers | RWS | trogers@rogers-websolutions.com`;
 
 const NICHES = [
   "HVAC companies Orange County",
@@ -416,7 +416,7 @@ function EmailModule({ state, setState }) {
   async function draftReply() {
     if (!ctx.trim()) return;
     setState(s => ({ ...s, drafting: true, draft: "" }));
-    const d = await ai(RWS_CTX + `\n\nDraft a reply from trogers@rogers-websolutions.com. Direct, short, human. Lead inquiries get a quick value pitch + Calendly link. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`, ctx);
+    const d = await ai(RWS_CTX + `\n\nDraft a reply from trogers@rogers-websolutions.com. Direct, short, human. Lead inquiries get a quick value pitch + Calendly link. Sign: Trafton Rogers | RWS | trogers@rogers-websolutions.com`, ctx);
     setState(s => ({ ...s, draft: d, drafting: false }));
   }
 
@@ -611,7 +611,7 @@ function CopyPanel({ prospect, onSend }) {
     try {
       const raw = await ai(
         RWS_CTX + `\n\nWrite an IG DM and cold email for this REAL business. Return ONLY valid JSON, no backticks:
-{"dm":"3-4 sentences. Casual Instagram DM. Reference real rating and review count. Be precise about web presence. Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Subject using their real data points","emailBody":"Cold email. Open with their real numbers. 3-4 short paragraphs. Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+{"dm":"3-4 sentences. Casual Instagram DM. Reference real rating and review count. Be precise about web presence. Close with rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com","emailSubject":"Subject using their real data points","emailBody":"Cold email. Open with their real numbers. 3-4 short paragraphs. Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com"}`,
         buildLeadCtx()
       );
       if (raw.startsWith("Error:")) { setColdError(raw); }
@@ -645,7 +645,7 @@ function CopyPanel({ prospect, onSend }) {
     try {
       const raw = await ai(
         RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up — ${timingCtx}. They haven't replied. Tone rules: genuinely casual, one soft touch, no urgency language, no repeating the pain point twice, no filler openers like "no worries if you've been busy". Reference their situation once, briefly. Leave the door open. Return ONLY valid JSON, no backticks:
-{"dm":"2 sentences max. Mention you reached out, leave it open. No pressure language. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Short low-key subject — not salesy","emailBody":"3 short paragraphs max. First: brief callback to the original outreach, one sentence. Second: one specific observation about their business — not repeated urgency. Third: soft CTA to rogers-websolutions.com/book, no pressure. NEVER use phrases like: lost bookings every day, you are missing out, most clients search online first, no worries if you have been busy. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+{"dm":"2 sentences max. Mention you reached out, leave it open. No pressure language. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com","emailSubject":"Short low-key subject — not salesy","emailBody":"3 short paragraphs max. First: brief callback to the original outreach, one sentence. Second: one specific observation about their business — not repeated urgency. Third: soft CTA to rogers-websolutions.com/book, no pressure. NEVER use phrases like: lost bookings every day, you are missing out, most clients search online first, no worries if you have been busy. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com"}`,
         buildLeadCtx() + ` | Follow-up: ${bumpNum} bump | ${timingCtx}`
       );
       if (raw.startsWith("Error:")) { setFuError(raw); }
@@ -683,7 +683,7 @@ function CopyPanel({ prospect, onSend }) {
     try {
       const raw = await ai(
         RWS_CTX + `\n\nCreate a tailored pitch for this lead. Return ONLY valid JSON, no backticks:
-{"talkingPoints":"4-6 bullet points as a single string, each on its own line starting with •. Specific to their situation. Reference their actual numbers. Map their pain point to RWS's solution. Include the package and pricing naturally. Conversational — these are call talking points, not a formal doc.","emailSubject":"Proposal email subject line — specific to them","emailBody":"Proposal email. Open by referencing how you connected. 3-4 paragraphs. Address their specific pain point. Pitch the package with pricing. Close with a soft CTA to book at rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+{"talkingPoints":"4-6 bullet points as a single string, each on its own line starting with •. Specific to their situation. Reference their actual numbers. Map their pain point to RWS's solution. Include the package and pricing naturally. Conversational — these are call talking points, not a formal doc.","emailSubject":"Proposal email subject line — specific to them","emailBody":"Proposal email. Open by referencing how you connected. 3-4 paragraphs. Address their specific pain point. Pitch the package with pricing. Close with a soft CTA to book at rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com"}`,
         buildLeadCtx() + ` | How they came in: ${SOURCES[pitchForm.source]} | Pain point: ${pitchForm.painPoint} | Package to pitch: ${PACKAGES[pitchForm.package]} | Timeline: ${TIMELINES[pitchForm.timeline]}${pitchForm.notes ? ` | Additional context: ${pitchForm.notes}` : ""}`
       );
       if (raw.startsWith("Error:")) { setPitchError(raw); }
@@ -1611,10 +1611,10 @@ function OutreachModule({ state, setState, pipeline }) {
     if (!target.trim()) return;
     setState(s => ({ ...s, loading: true, output: "" }));
     const prompts = {
-      cold:     "Write a cold outreach EMAIL with Subject: line. Use their real data. Human, value-first, Calendly close. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
-      dm:       "Write a cold Instagram DM. 3-4 sentences. References real data. Soft rogers-websolutions.com/book close. No em-dashes. Final line must be exactly: Trafton @ Rogers Web Solutions",
-      followup: "Write a follow-up email. No reply to first outreach. Brief, no pressure, specific re-pitch. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
-      warm:     "Write a closing email. They showed interest. Move them to book on rogers-websolutions.com/book. Confident and short. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
+      cold:     "Write a cold outreach EMAIL with Subject: line. Use their real data. Human, value-first, Calendly close. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com",
+      dm:       "Write a cold Instagram DM. 3-4 sentences. References real data. Soft rogers-websolutions.com/book close. No em-dashes. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com",
+      followup: "Write a follow-up email. No reply to first outreach. Brief, no pressure, specific re-pitch. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com",
+      warm:     "Write a closing email. They showed interest. Move them to book on rogers-websolutions.com/book. Confident and short. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com",
     };
     const r = await ai(RWS_CTX + `\n\n${prompts[type]}\nSign: Trafton Rogers | RWS | trogers@rogers-websolutions.com`, target);
     setState(s => ({ ...s, output: r, loading: false }));
@@ -1953,7 +1953,7 @@ function FollowUpBannerCard({ lead, fu, onStatusChange }) {
     try {
       const raw = await ai(
         RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up${daysSince !== null ? ` — ${daysSince} days since last contact` : ""}. They haven't replied. Tone rules: genuinely casual, one soft touch, no urgency language, no repeating the pain point twice, no filler openers like "no worries if you've been busy". Reference their situation once, briefly. Leave the door open. Return ONLY valid JSON, no backticks:
-{"dm":"2 sentences max. Mention you reached out, leave it open. No pressure language. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Short low-key subject — not salesy","emailBody":"3 short paragraphs max. First: brief callback to original outreach, one sentence. Second: one specific observation about their business — not repeated urgency. Third: soft CTA to rogers-websolutions.com/book, no pressure. NEVER use phrases like: lost bookings every day, you are missing out, most clients search online first, no worries if you have been busy. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+{"dm":"2 sentences max. Mention you reached out, leave it open. No pressure language. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com","emailSubject":"Short low-key subject — not salesy","emailBody":"3 short paragraphs max. First: brief callback to original outreach, one sentence. Second: one specific observation about their business — not repeated urgency. Third: soft CTA to rogers-websolutions.com/book, no pressure. NEVER use phrases like: lost bookings every day, you are missing out, most clients search online first, no worries if you have been busy. Final line must be exactly: Trafton Rogers | RWS | trogers@rogers-websolutions.com"}`,
         ctx
       );
       if (raw.startsWith("Error:")) { setError(raw); }
