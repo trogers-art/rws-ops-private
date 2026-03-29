@@ -221,7 +221,18 @@ function CopyBtn({ text, label = "Copy", sm, onCopy }) {
     setTimeout(() => setCopied(false), 2000);
     if (onCopy) onCopy();
   }
-  return <Btn onClick={copy} color={copied ? C.green : C.blue} sm={sm}>{copied ? "Copied" : label}</Btn>;
+  return (
+    <button onClick={copy} style={{
+      fontFamily: MONO, fontSize: sm ? 10 : 11, letterSpacing: "0.07em", fontWeight: 500,
+      padding: sm ? "5px 11px" : "9px 18px", borderRadius: 7, cursor: "pointer",
+      background: copied ? `${C.green}22` : "rgba(255,255,255,0.08)",
+      border: `1px solid ${copied ? C.green : "rgba(255,255,255,0.25)"}`,
+      color: copied ? C.green : C.text,
+      transition: "all 0.15s",
+    }}>
+      {copied ? "Copied" : label}
+    </button>
+  );
 }
 
 // ─── PIN GATE ─────────────────────────────────────────────────────────────────
