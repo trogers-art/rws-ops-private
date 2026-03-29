@@ -167,6 +167,12 @@ function parseIgHandle(raw) {
   return trimmed.replace(/^@/, "");
 }
 
+// Returns effective grade — downgrades to D if no email or IG found (phone-only)
+function resolvedGrade(lead) {
+  if (!lead.email && !lead.instagram && (lead.grade === "A" || lead.grade === "B")) return "D";
+  return lead.grade || "D";
+}
+
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
 function Pill({ color, children, sm }) {
   return (
@@ -952,8 +958,9 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
     notes:           prospect.notes || "",
   });
 
-  const gc         = GRADE_COLOR[prospect.grade] || C.muted;
+  const gc         = GRADE_COLOR[resolvedGrade(prospect)] || C.muted;
   const isEnriched = !!(prospect.email || prospect.instagram);
+  const effectiveGrade = resolvedGrade(prospect);
 
   async function handleEnrich() {
     setEnriching(true);
@@ -1005,7 +1012,8 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4, flexWrap: "wrap" }}>
             <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 700, color: C.text }}>{prospect.name}</span>
-            <Pill color={gc} sm>Grade {prospect.grade}</Pill>
+            <Pill color={gc} sm>Grade {effectiveGrade}</Pill>
+            {effectiveGrade !== prospect.grade && <Pill color={C.muted} sm>Phone only</Pill>}
             {prospect.websiteType === "link_in_bio" && <Pill color={C.amber} sm>Link-in-bio</Pill>}
             {!prospect.hasWebsite && prospect.websiteType !== "link_in_bio" && <Pill color={C.green} sm>No website</Pill>}
             {isEnriched && <Pill color={C.blue} sm>Enriched</Pill>}
@@ -1063,7 +1071,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
 
   const s  = STATUS[lead.status];
   const fu = followUpStatus(lead);
-  const gc = GRADE_COLOR[lead.grade] || C.muted;
+  const gc = GRADE_COLOR[resolvedGrade(lead)] || C.muted;
 
   const liveLead = {
     ...lead,
@@ -1126,7 +1134,8 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
             <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 600, color: C.text }}>{lead.name}</span>
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{lead.city}</span>
-            {lead.grade && <Pill color={gc} sm>Grade {lead.grade}</Pill>}
+            {lead.grade && <Pill color={gc} sm>Grade {resolvedGrade(lead)}</Pill>}
+            {resolvedGrade(lead) !== lead.grade && <Pill color={C.muted} sm>Phone only</Pill>}
             {lead.websiteType === "link_in_bio" && <Pill color={C.amber} sm>Link-in-bio</Pill>}
             {lead.source === "manual" && <Pill color={C.green} sm>Manual</Pill>}
             {lead.manuallyEdited && <Pill color={C.purple} sm>Edited</Pill>}
@@ -1395,7 +1404,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
     });
 
     const candidates = newProspects.filter(p =>
-      (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)
+      (resolvedGrade(p) === "A" || resolvedGrade(p) === "B") && !pipelineNames.has(p.name)
     );
     if (candidates.length === 0) return;
 
@@ -1434,7 +1443,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
   async function autoPipeline() {
     const visible = prospects.filter(p => !dismissed.has(p.name));
     const candidates = visible.filter(p =>
-      (p.grade === "A" || p.grade === "B") &&
+      (resolvedGrade(p) === "A" || resolvedGrade(p) === "B") &&
       !pipelineNames.has(p.name)
     );
 
@@ -1484,21 +1493,21 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
   }
 
   const visible = prospects.filter(p => !dismissed.has(p.name));
-  const aGrade  = visible.filter(p => p.grade === "A");
-  const bGrade  = visible.filter(p => p.grade === "B");
-  const cGrade  = visible.filter(p => p.grade === "C");
-  const dGrade  = visible.filter(p => p.grade === "D");
+  const aGrade  = visible.filter(p => resolvedGrade(p) === "A");
+  const bGrade  = visible.filter(p => resolvedGrade(p) === "B");
+  const cGrade  = visible.filter(p => resolvedGrade(p) === "C");
+  const dGrade  = visible.filter(p => resolvedGrade(p) === "D");
   const noSite  = visible.filter(p => !p.hasWebsite);
 
   const autoCandidates = visible.filter(p =>
-    (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)
+    (resolvedGrade(p) === "A" || resolvedGrade(p) === "B") && !pipelineNames.has(p.name)
   ).length;
 
   const gradeGroups = [
     { grade: "A", label: "Grade A — Perfect Fit",           color: C.green, items: aGrade },
     { grade: "B", label: "Grade B — Solid Prospect",        color: C.amber, items: bGrade },
     { grade: "C", label: "Grade C — Redesign / Care Plan",  color: C.blue,  items: cGrade },
-    { grade: "D", label: "Grade D — Has Website",           color: C.muted, items: dGrade },
+    { grade: "D", label: "Grade D — Lower Priority",        color: C.muted, items: dGrade },
   ].filter(g => g.items.length > 0);
 
   return (
@@ -1790,7 +1799,7 @@ function AnalyticsModule({ pipeline }) {
     .slice(0, 8);
 
   const gradeMap = { A: 0, B: 0, C: 0, D: 0 };
-  pipeline.forEach(l => { if (l.grade) gradeMap[l.grade]++; });
+  pipeline.forEach(l => { const g = resolvedGrade(l); if (gradeMap[g] !== undefined) gradeMap[g]++; });
 
   const dataAge = pipeline.length < 3 || activeDays < 2;
 
@@ -2214,10 +2223,8 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd, onLogOutreach }) 
 
 // ─── COMMAND CENTER ────────────────────────────────────────────────────────────
 function CommandCenter({ prepData }) {
-  const [tab, setTab]               = useState("leads");
+  const [tab, setTab] = useState("leads");
   const [pipelineLoaded, setPipelineLoaded] = useState(false);
-  const [emailState,    setEmailState]    = useState({});
-  const [calendarState, setCalendarState] = useState({});
   const [leadsState,    setLeadsState]    = useState({
     niche:     prepData?.niche || "",
     prospects: prepData?.prospects || [],
@@ -2269,8 +2276,6 @@ function CommandCenter({ prepData }) {
   const followUpDue    = pipeline.filter(l => followUpStatus(l)?.urgent).length;
 
   const tabs = [
-    { id: "email",     label: "Email",     dot: C.green  },
-    { id: "calendar",  label: "Calendar",  dot: C.blue   },
     { id: "leads",     label: "Leads",     dot: C.amber  },
     { id: "outreach",  label: "Outreach",  dot: C.purple },
     { id: "pipeline",  label: "Pipeline",  dot: followUpDue > 0 ? C.red : C.green, badge: followUpDue > 0 ? `${followUpDue} due` : (activePipeline || null) },
@@ -2288,7 +2293,7 @@ function CommandCenter({ prepData }) {
             <span className="rws-hide-mobile" style={{ fontFamily: MONO, fontSize: 10, color: C.muted, whiteSpace: "nowrap" }}>· ops.rogers-websolutions.com</span>
           </div>
           <div className="rws-hide-mobile" style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
-            {[{ c: C.green, l: "Gmail" }, { c: C.blue, l: "GCal" }, { c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
+            {[{ c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
               <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <Dot color={s.c} size={5} />
                 <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{s.l}</span>
@@ -2318,8 +2323,6 @@ function CommandCenter({ prepData }) {
       </div>
 
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "20px 16px" }}>
-        <div style={{ display: tab === "email"     ? "block" : "none" }}><EmailModule    state={emailState}    setState={setEmailState} /></div>
-        <div style={{ display: tab === "calendar"  ? "block" : "none" }}><CalendarModule state={calendarState} setState={setCalendarState} /></div>
         <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} pipeline={pipeline} /></div>
         <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
         <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead} onRemove={removeLead} onAdd={addToPipeline} /></div>
