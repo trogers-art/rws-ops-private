@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 
 const C = {
   bg:      "#07080b",
@@ -1150,6 +1150,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
           <div style={{ display: "flex", gap: 12, marginTop: 3, flexWrap: "wrap" }}>
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Added {lead.addedAt}</span>
             {lead.contactedAt && <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue }}>Contacted {new Date(lead.contactedAt).toLocaleDateString()}</span>}
+            {lead.outreachType && <Pill color={lead.outreachType === "dm" ? C.purple : C.green} sm>{lead.outreachType === "dm" ? "DM" : "Email"} sent</Pill>}
             {fu && <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>}
           </div>
           {lead.notes && <p style={{ fontFamily: MONO, fontSize: 10, color: C.sub, margin: "4px 0 0", fontStyle: "italic" }}>{lead.notes}</p>}
@@ -1163,12 +1164,38 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
       </div>
 
       <div style={{ padding: "0 18px 12px", display: "flex", flexWrap: "wrap", gap: 5 }}>
-        {Object.entries(STATUS).map(([id, st]) => (
-          <button key={id} onClick={() => onStatusChange(lead.id, id)}
-            style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === id ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === id ? st.color : C.border}`, color: lead.status === id ? st.color : C.muted }}>
-            {st.label}
-          </button>
-        ))}
+        {Object.entries(STATUS).map(([id, st]) => {
+          if (id === "contacted") return (
+            <React.Fragment key={id}>
+              <button onClick={() => onStatusChange(lead.id, "contacted", "dm")}
+                style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === "contacted" ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === "contacted" ? st.color : C.border}`, color: lead.status === "contacted" ? st.color : C.muted }}>
+                DM Sent
+              </button>
+              <button onClick={() => onStatusChange(lead.id, "contacted", "email")}
+                style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === "contacted" ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === "contacted" ? st.color : C.border}`, color: lead.status === "contacted" ? st.color : C.muted }}>
+                Email Sent
+              </button>
+            </React.Fragment>
+          );
+          if (id === "followup") return (
+            <React.Fragment key={id}>
+              <button onClick={() => onStatusChange(lead.id, "followup", "dm")}
+                style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === "followup" ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === "followup" ? st.color : C.border}`, color: lead.status === "followup" ? st.color : C.muted }}>
+                Follow-up DM
+              </button>
+              <button onClick={() => onStatusChange(lead.id, "followup", "email")}
+                style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === "followup" ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === "followup" ? st.color : C.border}`, color: lead.status === "followup" ? st.color : C.muted }}>
+                Follow-up Email
+              </button>
+            </React.Fragment>
+          );
+          return (
+            <button key={id} onClick={() => onStatusChange(lead.id, id)}
+              style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === id ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === id ? st.color : C.border}`, color: lead.status === id ? st.color : C.muted }}>
+              {st.label}
+            </button>
+          );
+        })}
       </div>
 
       {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
@@ -1946,6 +1973,7 @@ function AnalyticsModule({ pipeline }) {
 // ─── FOLLOW-UP BANNER CARD ────────────────────────────────────────────────────
 function FollowUpBannerCard({ lead, fu, onStatusChange }) {
   const [showCopy,    setShowCopy]    = useState(false);
+  const [showDetail,  setShowDetail]  = useState(false);
   const [draft,       setDraft]       = useState(null);
   const [generating,  setGenerating]  = useState(false);
   const [error,       setError]       = useState(null);
@@ -1953,10 +1981,14 @@ function FollowUpBannerCard({ lead, fu, onStatusChange }) {
   const [sendResult,  setSendResult]  = useState(null);
   const [showSend,    setShowSend]    = useState(false);
 
-  const bumpNum   = lead.status === "followup" ? "second" : "first";
-  const daysSince = lead.contactedAt
+  const bumpNum  = lead.status === "followup" ? "second" : "first";
+  const daysAgo  = lead.contactedAt
     ? Math.floor((Date.now() - new Date(lead.contactedAt).getTime()) / 86400000)
     : null;
+
+  const outreachLabel = lead.outreachType === "dm"    ? "DM"
+                      : lead.outreachType === "email" ? "Email"
+                      : null;
 
   async function generate() {
     if (draft) { setShowCopy(e => !e); return; }
@@ -1969,10 +2001,10 @@ function FollowUpBannerCard({ lead, fu, onStatusChange }) {
       : wType === "real"      ? `Has a real website: ${wUrl}`
       : wUrl                  ? `Has website: ${wUrl}`
       : "No website";
-    const ctx = `Business: ${lead.name} | City: ${lead.city} | Category: ${lead.category} | Rating: ${lead.rating}★ | Reviews: ${lead.reviews} | ${websiteCtx}${lead.notes ? ` | Notes: ${lead.notes}` : ""} | Follow-up: ${bumpNum} bump${daysSince !== null ? ` | ${daysSince} days since contact` : ""}`;
+    const ctx = `Business: ${lead.name} | City: ${lead.city} | Category: ${lead.category} | Rating: ${lead.rating}★ | Reviews: ${lead.reviews} | ${websiteCtx}${lead.notes ? ` | Notes: ${lead.notes}` : ""} | Follow-up: ${bumpNum} bump${daysAgo !== null ? ` | ${daysAgo} days since contact` : ""}${outreachLabel ? ` | Original outreach was via: ${outreachLabel}` : ""}`;
     try {
       const raw = await ai(
-        RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up${daysSince !== null ? ` — ${daysSince} days since last contact` : ""}. They haven't replied. Tone rules: genuinely casual, one soft touch, no urgency language, no repeating the pain point twice, no filler openers like "no worries if you've been busy". Reference their situation once, briefly. Leave the door open. Return ONLY valid JSON, no backticks:
+        RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up${daysAgo !== null ? ` — ${daysAgo} days since last contact` : ""}. They haven't replied. Tone rules: genuinely casual, one soft touch, no urgency language, no repeating the pain point twice, no filler openers like "no worries if you've been busy". Reference their situation once, briefly. Leave the door open. Return ONLY valid JSON, no backticks:
 {"dm":"2 sentences max. Mention you reached out, leave it open. No pressure language. REQUIRED — last line must be exactly this, no exceptions: Trafton Rogers | RWS | trogers@rogers-websolutions.com","emailSubject":"Short low-key subject — not salesy","emailBody":"3 short paragraphs max. First: brief callback to original outreach, one sentence. Second: one specific observation about their business — not repeated urgency. Third: soft CTA to rogers-websolutions.com/book, no pressure. NEVER use phrases like: lost bookings every day, you are missing out, most clients search online first, no worries if you have been busy. REQUIRED — last line must be exactly this, no exceptions: Trafton Rogers | RWS | trogers@rogers-websolutions.com"}`,
         ctx
       );
@@ -1991,33 +2023,94 @@ function FollowUpBannerCard({ lead, fu, onStatusChange }) {
     setSending(true); setSendResult(null);
     const result = await sendEmail(lead.email, draft.emailSubject, draft.emailBody);
     setSending(false);
-    if (result.success) { setSendResult("sent"); logOutreach("emails"); onStatusChange(lead.id, "followup"); }
+    if (result.success) { setSendResult("sent"); logOutreach("emails"); onStatusChange(lead.id, "followup", "email"); }
     else { setSendResult(result.error || "unknown error"); }
   }
 
   return (
     <div style={{ background: `${C.red}08`, border: `1px solid ${C.red}30`, borderRadius: 10, overflow: "hidden" }}>
-      {/* Header row */}
-      <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+
+      {/* ── Header row ── */}
+      <div style={{ padding: "12px 16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
             <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{lead.name}</span>
-            {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || "IG"}</a>}
-            {lead.phone && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{lead.phone}</span>}
+            {lead.city && <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{lead.city}</span>}
+            {lead.grade && <Pill color={GRADE_COLOR[resolvedGrade(lead)] || C.muted} sm>Grade {resolvedGrade(lead)}</Pill>}
+            {outreachLabel && <Pill color={outreachLabel === "DM" ? C.purple : C.green} sm>{outreachLabel} sent</Pill>}
           </div>
           <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>
+          {/* Inline contact summary — always visible */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 5 }}>
+            {lead.email    && <span style={{ fontFamily: MONO, fontSize: 10, color: C.green }}>{lead.email}</span>}
+            {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || "IG"}</a>}
+            {lead.phone    && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{lead.phone}</span>}
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", flexShrink: 0 }}>
+          <Btn sm color={C.muted} onClick={() => setShowDetail(d => !d)}>
+            {showDetail ? "Hide Detail" : "Show Detail"}
+          </Btn>
           <Btn sm color={C.blue} loading={generating} onClick={generate}>
             {draft ? (showCopy ? "Hide Copy" : "Show Copy") : "Get Copy"}
           </Btn>
-          <Btn sm color={C.amber} onClick={() => onStatusChange(lead.id, "followup")}>Mark Sent</Btn>
-          <Btn sm color={C.green} onClick={() => onStatusChange(lead.id, "warm")}>Mark Warm</Btn>
-          <Btn sm color={C.red}   onClick={() => onStatusChange(lead.id, "cold")}>Mark Cold</Btn>
         </div>
       </div>
 
-      {/* Copy output */}
+      {/* ── Expanded detail panel ── */}
+      {showDetail && (
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px", background: "rgba(0,0,0,0.2)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+
+            {/* Contact info */}
+            <div>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 6px" }}>Contact</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {lead.email
+                  ? <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{lead.email}</span>
+                  : <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>No email</span>}
+                {lead.instagram
+                  ? <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || lead.instagram}</a>
+                  : <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>No Instagram</span>}
+                {lead.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{lead.phone}</span>}
+              </div>
+            </div>
+
+            {/* Outreach history */}
+            <div>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 6px" }}>Outreach History</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {lead.contactedAt
+                  ? <span style={{ fontFamily: MONO, fontSize: 11, color: C.blue }}>First contact: {new Date(lead.contactedAt).toLocaleDateString()}</span>
+                  : <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>No contact date logged</span>}
+                {daysAgo !== null && <span style={{ fontFamily: MONO, fontSize: 11, color: fu.color }}>{daysAgo}d since last contact</span>}
+                {outreachLabel
+                  ? <span style={{ fontFamily: MONO, fontSize: 11, color: outreachLabel === "DM" ? C.purple : C.green }}>Sent via: {outreachLabel}</span>
+                  : <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>Channel not logged</span>}
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>Bump: {bumpNum === "second" ? "2nd follow-up" : "1st follow-up"}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          {lead.notes && (
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Notes</p>
+              <p style={{ fontFamily: MONO, fontSize: 11, color: C.sub, margin: 0, fontStyle: "italic", lineHeight: 1.6 }}>{lead.notes}</p>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Btn sm color={C.purple} onClick={() => onStatusChange(lead.id, "followup", "dm")}>Mark DM Sent</Btn>
+            <Btn sm color={C.green}  onClick={() => onStatusChange(lead.id, "followup", "email")}>Mark Email Sent</Btn>
+            <Btn sm color={C.green}  onClick={() => onStatusChange(lead.id, "warm")}>Mark Warm</Btn>
+            <Btn sm color={C.red}    onClick={() => onStatusChange(lead.id, "cold")}>Mark Cold</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* ── Copy output ── */}
       {error && (
         <div style={{ margin: "0 16px 12px", padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
           <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{error}</span>
@@ -2028,7 +2121,7 @@ function FollowUpBannerCard({ lead, fu, onStatusChange }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <Dot color={C.blue} size={5} />
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-              {bumpNum === "second" ? "2nd Bump" : "1st Bump"}{daysSince !== null ? ` · ${daysSince}d since contact` : ""}
+              {bumpNum === "second" ? "2nd Bump" : "1st Bump"}{daysAgo !== null ? ` · ${daysAgo}d since contact` : ""}
             </span>
           </div>
           {/* DM */}
@@ -2036,7 +2129,7 @@ function FollowUpBannerCard({ lead, fu, onStatusChange }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Follow-up DM</Label>
               <div style={{ display: "flex", gap: 6 }}>
-                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={() => logOutreach("dms")} />
+                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={() => { logOutreach("dms"); onStatusChange(lead.id, "followup", "dm"); }} />
                 {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>Open IG</a>}
               </div>
             </div>
@@ -2095,10 +2188,11 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd, onLogOutreach }) 
 
   const visible = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
 
-  function handleStatusChange(id, newStatus) {
+  function handleStatusChange(id, newStatus, outreachType) {
     const patch = { status: newStatus };
     if (newStatus === "contacted" || newStatus === "followup") {
       patch.contactedAt = new Date().toISOString();
+      if (outreachType) patch.outreachType = outreachType;
     }
     onUpdate(id, patch);
   }
