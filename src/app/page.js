@@ -151,11 +151,9 @@ async function savePipeline(pipeline) {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-// Accepts @handle, handle, or full https://www.instagram.com/handle/ URL
 function parseIgHandle(raw) {
   if (!raw) return "";
   const trimmed = raw.trim();
-  // Full URL — extract path segment
   try {
     if (trimmed.startsWith("http")) {
       const url = new URL(trimmed);
@@ -163,11 +161,9 @@ function parseIgHandle(raw) {
       return parts[0] || "";
     }
   } catch {}
-  // Strip leading @
   return trimmed.replace(/^@/, "");
 }
 
-// Returns effective grade — downgrades to D if no email or IG found (phone-only)
 function resolvedGrade(lead) {
   if (!lead.email && !lead.instagram && (lead.grade === "A" || lead.grade === "B")) return "D";
   return lead.grade || "D";
@@ -559,9 +555,7 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
 }
 
 // ─── SHARED: COPY PANEL ───────────────────────────────────────────────────────
-// mode: "cold" | "followup" | "pitch"
 function CopyPanel({ prospect, onSend }) {
-  // ── Cold copy state ──
   const [coldDraft,      setColdDraft]      = useState(null);
   const [coldGenerating, setColdGenerating] = useState(false);
   const [coldError,      setColdError]      = useState(null);
@@ -570,7 +564,6 @@ function CopyPanel({ prospect, onSend }) {
   const [coldSendResult, setColdSendResult] = useState(null);
   const [coldShowSend,   setColdShowSend]   = useState(false);
 
-  // ── Follow-up copy state ──
   const [fuDraft,      setFuDraft]      = useState(null);
   const [fuGenerating, setFuGenerating] = useState(false);
   const [fuError,      setFuError]      = useState(null);
@@ -579,7 +572,6 @@ function CopyPanel({ prospect, onSend }) {
   const [fuSendResult, setFuSendResult] = useState(null);
   const [fuShowSend,   setFuShowSend]   = useState(false);
 
-  // ── Pitch state ──
   const [showPitchForm,  setShowPitchForm]  = useState(false);
   const [pitchDraft,     setPitchDraft]     = useState(null);
   const [pitchGenerating,setPitchGenerating]= useState(false);
@@ -596,14 +588,12 @@ function CopyPanel({ prospect, onSend }) {
     notes:     "",
   });
 
-  // Reset cold + followup drafts when lead data changes
   useEffect(() => {
     setColdDraft(null); setColdExpanded(false); setColdError(null);
     setFuDraft(null);   setFuExpanded(false);   setFuError(null);
     setPitchDraft(null);setPitchExpanded(false);setPitchError(null);
   }, [prospect.name, prospect.email, prospect.instagram, prospect.websiteType, prospect.website, prospect.hasWebsite, prospect.notes]);
 
-  // ── Shared helpers ──
   function buildLeadCtx() {
     const wType = prospect.websiteType;
     const wUrl  = prospect.website;
@@ -621,7 +611,6 @@ function CopyPanel({ prospect, onSend }) {
     return `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}★ | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Notes: ${prospect.notes}` : ""}`;
   }
 
-  // ── Cold copy ──
   async function generateCold() {
     if (coldDraft) { setColdExpanded(e => !e); return; }
     setColdGenerating(true); setColdError(null);
@@ -650,7 +639,6 @@ function CopyPanel({ prospect, onSend }) {
     else { setColdSendResult(result.error || "unknown error"); }
   }
 
-  // ── Follow-up copy ──
   async function generateFollowUp() {
     if (fuDraft) { setFuExpanded(e => !e); return; }
     setFuGenerating(true); setFuError(null);
@@ -684,7 +672,6 @@ function CopyPanel({ prospect, onSend }) {
     else { setFuSendResult(result.error || "unknown error"); }
   }
 
-  // ── Pitch ──
   const PACKAGES = {
     starter: "Starter Site — $500 one-time (up to 4 pages, ~1 week)",
     care:    "Site + Care — $750 build + $200/mo (hosting, maintenance, unlimited edits)",
@@ -723,7 +710,6 @@ function CopyPanel({ prospect, onSend }) {
     else { setPitchSendResult(result.error || "unknown error"); }
   }
 
-  // ── Reusable email send block ──
   function SendBlock({ draft, showSend, setShowSend, sending, onSend: handleSend, sendResult }) {
     if (!showSend) return null;
     return (
@@ -751,8 +737,6 @@ function CopyPanel({ prospect, onSend }) {
 
   return (
     <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px" }}>
-
-      {/* ── Button row ── */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: (coldExpanded || fuExpanded || showPitchForm || pitchExpanded) ? 14 : 0 }}>
         <Btn onClick={generateCold} loading={coldGenerating} color={C.amber} sm>
           {coldDraft ? (coldExpanded ? "Hide Copy" : "Show Copy") : "Get Copy"}
@@ -770,19 +754,16 @@ function CopyPanel({ prospect, onSend }) {
         )}
       </div>
 
-      {/* ── Errors ── */}
       {coldError && <div style={{ marginBottom: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}><span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{coldError}</span></div>}
       {fuError   && <div style={{ marginBottom: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}><span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{fuError}</span></div>}
       {pitchError && <div style={{ marginBottom: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}><span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{pitchError}</span></div>}
 
-      {/* ── Cold copy output ── */}
       {coldExpanded && coldDraft && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <Dot color={C.amber} size={5} />
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, letterSpacing: "0.1em", textTransform: "uppercase" }}>Cold Outreach</span>
           </div>
-          {/* DM */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>IG DM</Label>
@@ -793,7 +774,6 @@ function CopyPanel({ prospect, onSend }) {
             </div>
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{coldDraft.dm}</div>
           </div>
-          {/* Email */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Cold Email</Label>
@@ -812,7 +792,6 @@ function CopyPanel({ prospect, onSend }) {
         </div>
       )}
 
-      {/* ── Follow-up copy output ── */}
       {fuExpanded && fuDraft && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -822,7 +801,6 @@ function CopyPanel({ prospect, onSend }) {
               {prospect.contactedAt && ` · ${Math.floor((Date.now() - new Date(prospect.contactedAt).getTime()) / 86400000)}d since contact`}
             </span>
           </div>
-          {/* DM */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Follow-up DM</Label>
@@ -833,7 +811,6 @@ function CopyPanel({ prospect, onSend }) {
             </div>
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{fuDraft.dm}</div>
           </div>
-          {/* Email */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Follow-up Email</Label>
@@ -852,7 +829,6 @@ function CopyPanel({ prospect, onSend }) {
         </div>
       )}
 
-      {/* ── Pitch form ── */}
       {showPitchForm && (
         <div style={{ marginBottom: 16, background: `${C.green}06`, border: `1px solid ${C.green}20`, borderRadius: 10, padding: "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
@@ -904,7 +880,6 @@ function CopyPanel({ prospect, onSend }) {
         </div>
       )}
 
-      {/* ── Pitch output ── */}
       {pitchExpanded && pitchDraft && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -912,7 +887,6 @@ function CopyPanel({ prospect, onSend }) {
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.green, letterSpacing: "0.1em", textTransform: "uppercase" }}>Pitch — {prospect.name}</span>
             <Btn onClick={() => { setPitchExpanded(false); setShowPitchForm(true); }} color={C.muted} sm>Regenerate</Btn>
           </div>
-          {/* Talking points */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Talking Points</Label>
@@ -920,7 +894,6 @@ function CopyPanel({ prospect, onSend }) {
             </div>
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.85, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.green}20`, whiteSpace: "pre-wrap" }}>{pitchDraft.talkingPoints}</div>
           </div>
-          {/* Proposal email */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Proposal Email</Label>
@@ -938,12 +911,11 @@ function CopyPanel({ prospect, onSend }) {
           </div>
         </div>
       )}
-
     </div>
   );
 }
 
-// ─── LEAD CARD (Leads tab — triage only, no copy) ─────────────────────────────
+// ─── LEAD CARD ────────────────────────────────────────────────────────────────
 function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   const [prospect,  setProspect]  = useState(initialProspect);
   const [editing,   setEditing]   = useState(false);
@@ -984,9 +956,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
           websiteType:     result.websiteType || d.websiteType,
         }));
       }
-    } catch (e) {
-      console.error("Enrich failed:", e);
-    }
+    } catch (e) { console.error("Enrich failed:", e); }
     setEnriching(false);
   }
 
@@ -1043,7 +1013,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   );
 }
 
-// ─── PIPELINE CARD (Pipeline tab — full workflow) ─────────────────────────────
+// ─── PIPELINE CARD ────────────────────────────────────────────────────────────
 function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
   const [editing,   setEditing]   = useState(false);
   const [enriching, setEnriching] = useState(false);
@@ -1105,9 +1075,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
           websiteType:     patch.websiteType || d.websiteType,
         }));
       }
-    } catch (e) {
-      console.error("Enrich failed:", e);
-    }
+    } catch (e) { console.error("Enrich failed:", e); }
     setEnriching(false);
   }
 
@@ -1211,12 +1179,10 @@ function AddLeadModal({ onAdd, onClose }) {
     email: "", instagramHandle: "", website: "", websiteType: "",
     grade: "B", notes: "",
   };
-  const [form,     setForm]     = useState(EMPTY);
+  const [form,      setForm]      = useState(EMPTY);
   const [enriching, setEnriching] = useState(false);
 
-  function set(key, val) {
-    setForm(f => ({ ...f, [key]: val }));
-  }
+  function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
 
   async function handleEnrich() {
     if (!form.name.trim()) return;
@@ -1263,23 +1229,12 @@ function AddLeadModal({ onAdd, onClose }) {
     onClose();
   }
 
-  const inputStyle = {
-    width: "100%", boxSizing: "border-box",
-    background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`,
-    borderRadius: 7, padding: "8px 11px",
-    fontFamily: MONO, fontSize: 11, color: C.text, outline: "none",
-  };
-  const labelStyle = {
-    fontFamily: MONO, fontSize: 9, color: C.muted,
-    letterSpacing: "0.1em", textTransform: "uppercase",
-    display: "block", marginBottom: 4,
-  };
+  const inputStyle = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "8px 11px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" };
+  const labelStyle = { fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase", display: "block", marginBottom: 4 };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 14, width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto", padding: "24px 28px" }}>
-
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Dot color={C.green} size={7} />
@@ -1287,8 +1242,6 @@ function AddLeadModal({ onAdd, onClose }) {
           </div>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: MONO, fontSize: 18, lineHeight: 1, padding: "0 4px" }}>×</button>
         </div>
-
-        {/* Business Info */}
         <div style={{ marginBottom: 14 }}>
           <Label>Business Info</Label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -1310,8 +1263,7 @@ function AddLeadModal({ onAdd, onClose }) {
             </div>
             <div>
               <label style={labelStyle}>Grade</label>
-              <select value={form.grade} onChange={e => set("grade", e.target.value)}
-                style={{ ...inputStyle, background: "#0d0f14" }}>
+              <select value={form.grade} onChange={e => set("grade", e.target.value)} style={{ ...inputStyle, background: "#0d0f14" }}>
                 <option value="A">A — Perfect fit</option>
                 <option value="B">B — Solid prospect</option>
                 <option value="C">C — Redesign / care plan</option>
@@ -1320,8 +1272,6 @@ function AddLeadModal({ onAdd, onClose }) {
             </div>
           </div>
         </div>
-
-        {/* Contact Info */}
         <div style={{ marginBottom: 14 }}>
           <Label>Contact Info</Label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -1335,8 +1285,6 @@ function AddLeadModal({ onAdd, onClose }) {
             </div>
           </div>
         </div>
-
-        {/* Web Presence */}
         <div style={{ marginBottom: 14 }}>
           <Label>Web Presence</Label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -1346,8 +1294,7 @@ function AddLeadModal({ onAdd, onClose }) {
             </div>
             <div>
               <label style={labelStyle}>Website Type</label>
-              <select value={form.websiteType} onChange={e => set("websiteType", e.target.value)}
-                style={{ ...inputStyle, background: "#0d0f14" }}>
+              <select value={form.websiteType} onChange={e => set("websiteType", e.target.value)} style={{ ...inputStyle, background: "#0d0f14" }}>
                 <option value="">None / Unknown</option>
                 <option value="none">No website</option>
                 <option value="link_in_bio">Link-in-bio</option>
@@ -1357,24 +1304,16 @@ function AddLeadModal({ onAdd, onClose }) {
             </div>
           </div>
         </div>
-
-        {/* Notes */}
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Notes</label>
           <textarea value={form.notes} onChange={e => set("notes", e.target.value)}
             placeholder="e.g. Found on IG, active with reels, no website link in bio" rows={2}
             style={{ ...inputStyle, resize: "vertical" }} />
         </div>
-
-        {/* Actions */}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <Btn onClick={handleEnrich} loading={enriching} disabled={!form.name.trim()} color={C.blue} sm>
-            Enrich
-          </Btn>
+          <Btn onClick={handleEnrich} loading={enriching} disabled={!form.name.trim()} color={C.blue} sm>Enrich</Btn>
           <Btn onClick={onClose} color={C.muted} sm>Cancel</Btn>
-          <Btn onClick={handleSubmit} disabled={!form.name.trim()} color={C.green}>
-            Add to Pipeline
-          </Btn>
+          <Btn onClick={handleSubmit} disabled={!form.name.trim()} color={C.green}>Add to Pipeline</Btn>
         </div>
       </div>
     </div>
@@ -1385,10 +1324,7 @@ async function dismissLead(name) {
   try {
     await fetch("/api/dismissed", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-app-pin": process.env.NEXT_PUBLIC_APP_PIN || "",
-      },
+      headers: { "Content-Type": "application/json", "x-app-pin": process.env.NEXT_PUBLIC_APP_PIN || "" },
       body: JSON.stringify({ name }),
     });
   } catch {}
@@ -1396,9 +1332,7 @@ async function dismissLead(name) {
 
 async function loadDismissed() {
   try {
-    const res = await fetch("/api/dismissed", {
-      headers: { "x-app-pin": process.env.NEXT_PUBLIC_APP_PIN || "" },
-    });
+    const res = await fetch("/api/dismissed", { headers: { "x-app-pin": process.env.NEXT_PUBLIC_APP_PIN || "" } });
     const d = await res.json();
     return new Set(d.dismissed || []);
   } catch { return new Set(); }
@@ -1407,28 +1341,22 @@ async function loadDismissed() {
 // ─── LEAD SCRAPER ─────────────────────────────────────────────────────────────
 function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
   const { niche = "", prospects = [], loading = false, error = "" } = state;
-  const [dismissed,       setDismissed]       = useState(new Set());
-  const [autoPipelining,  setAutoPipelining]  = useState(false);
-  const [autoLog,         setAutoLog]         = useState([]);
-  const [showAutoLog,     setShowAutoLog]     = useState(false);
+  const [dismissed,      setDismissed]      = useState(new Set());
+  const [autoPipelining, setAutoPipelining] = useState(false);
+  const [autoLog,        setAutoLog]        = useState([]);
+  const [showAutoLog,    setShowAutoLog]    = useState(false);
 
-  useEffect(() => {
-    loadDismissed().then(setDismissed);
-  }, []);
+  useEffect(() => { loadDismissed().then(setDismissed); }, []);
 
   async function search() {
     if (!niche.trim()) return;
-    setState(s => ({ ...s, loading: true, error: "" }));
+    // ── FIX: clear previous results before loading new search ──
+    setState(s => ({ ...s, loading: true, error: "", prospects: [] }));
     const data = await fetchLeads(niche);
     if (data.error) { setState(s => ({ ...s, loading: false, error: data.error })); return; }
     logNicheSearch(niche, data.aGrade || 0, data.bGrade || 0);
     const newProspects = data.prospects || [];
-    setState(s => {
-      const existing = s.prospects || [];
-      const existingNames = new Set(existing.map(p => p.name));
-      const merged = [...existing, ...newProspects.filter(p => !existingNames.has(p.name))];
-      return { ...s, loading: false, prospects: merged, lastSearch: niche };
-    });
+    setState(s => ({ ...s, loading: false, prospects: newProspects, lastSearch: niche }));
 
     const candidates = newProspects.filter(p =>
       (resolvedGrade(p) === "A" || resolvedGrade(p) === "B") && !pipelineNames.has(p.name)
@@ -1449,7 +1377,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
     for (const prospect of eligible) {
       log.push(`Enriching ${prospect.name}...`);
       setAutoLog([...log]);
-      const result  = await enrichLead(prospect);
+      const result   = await enrichLead(prospect);
       const enriched = { ...prospect, ...result, enriched: true };
       if (!!(enriched.email || enriched.instagram)) {
         onAdd(enriched);
@@ -1468,10 +1396,9 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
   }
 
   async function autoPipeline() {
-    const visible = prospects.filter(p => !dismissed.has(p.name));
+    const visible    = prospects.filter(p => !dismissed.has(p.name));
     const candidates = visible.filter(p =>
-      (resolvedGrade(p) === "A" || resolvedGrade(p) === "B") &&
-      !pipelineNames.has(p.name)
+      (resolvedGrade(p) === "A" || resolvedGrade(p) === "B") && !pipelineNames.has(p.name)
     );
 
     if (candidates.length === 0) {
@@ -1484,23 +1411,18 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
     setAutoLog([`Found ${candidates.length} Grade A/B candidates. Enriching...`]);
     setShowAutoLog(true);
 
-    let added = 0;
-    let skipped = 0;
+    let added = 0, skipped = 0;
     const log = [`Found ${candidates.length} Grade A/B candidates. Enriching...`];
 
     for (const prospect of candidates) {
       log.push(`Enriching ${prospect.name}...`);
       setAutoLog([...log]);
-
-      const result = await enrichLead(prospect);
+      const result   = await enrichLead(prospect);
       const enriched = { ...prospect, ...result, enriched: true };
-      const hasContact = !!(enriched.email || enriched.instagram);
-
-      if (hasContact) {
+      if (!!(enriched.email || enriched.instagram)) {
         onAdd(enriched);
         added++;
-        const contact = enriched.email ? enriched.email : enriched.instagramHandle || "IG";
-        log.push(`Added: ${prospect.name} (${contact})`);
+        log.push(`Added: ${prospect.name} (${enriched.email ? enriched.email : enriched.instagramHandle || "IG"})`);
       } else {
         skipped++;
         log.push(`Skipped: ${prospect.name} — no email or IG found`);
@@ -1531,10 +1453,10 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
   ).length;
 
   const gradeGroups = [
-    { grade: "A", label: "Grade A — Perfect Fit",           color: C.green, items: aGrade },
-    { grade: "B", label: "Grade B — Solid Prospect",        color: C.amber, items: bGrade },
-    { grade: "C", label: "Grade C — Redesign / Care Plan",  color: C.blue,  items: cGrade },
-    { grade: "D", label: "Grade D — Lower Priority",        color: C.muted, items: dGrade },
+    { grade: "A", label: "Grade A — Perfect Fit",          color: C.green, items: aGrade },
+    { grade: "B", label: "Grade B — Solid Prospect",       color: C.amber, items: bGrade },
+    { grade: "C", label: "Grade C — Redesign / Care Plan", color: C.blue,  items: cGrade },
+    { grade: "D", label: "Grade D — Lower Priority",       color: C.muted, items: dGrade },
   ].filter(g => g.items.length > 0);
 
   return (
@@ -1585,9 +1507,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {autoPipelining && i === autoLog.length - 1 && !isDone
                     ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>→</span>
-                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>
-                        {isAdded ? "✓" : isSkipped ? "—" : isDone ? "●" : "·"}
-                      </span>
+                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>{isAdded ? "✓" : isSkipped ? "—" : isDone ? "●" : "·"}</span>
                   }
                   <span style={{ fontFamily: MONO, fontSize: 11, color }}>{line}</span>
                 </div>
@@ -1615,7 +1535,6 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
               </div>
             ))}
           </div>
-
           {gradeGroups.map(g => (
             <div key={g.grade}>
               <div style={{ marginBottom: 10 }}><Pill color={g.color}>{g.label}</Pill></div>
@@ -1632,7 +1551,6 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
       {!loading && visible.length === 0 && prospects.length > 0 && (
         <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>All results dismissed — search a new niche or clear results.</p></Card>
       )}
-
       {!loading && prospects.length === 0 && niche && !error && (
         <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No results yet — hit Search to pull real businesses from Google Maps.</p></Card>
       )}
@@ -1663,54 +1581,53 @@ function OutreachModule({ state, setState, pipeline }) {
       followup: "Write a follow-up email. No reply to first outreach. Brief, no pressure, specific re-pitch. REQUIRED — last line must be exactly this, no exceptions: Trafton Rogers | RWS | trogers@rogers-websolutions.com",
       warm:     "Write a closing email. They showed interest. Move them to book on rogers-websolutions.com/book. Confident and short. REQUIRED — last line must be exactly this, no exceptions: Trafton Rogers | RWS | trogers@rogers-websolutions.com",
     };
-    const r = await ai(RWS_CTX + `\n\n${prompts[type]}\nSign: Trafton Rogers | RWS | trogers@rogers-websolutions.com`, target);
-    setState(s => ({ ...s, output: r, loading: false }));
+    const result = await ai(RWS_CTX + `\n\n${prompts[type]}`, target);
+    setState(s => ({ ...s, output: result, loading: false }));
   }
-
-  const activePipeline = pipeline.filter(l => ["new","contacted","followup","warm"].includes(l.status));
 
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
         <Dot color={C.purple} /><span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Outreach</span>
+        <Pill color={C.purple} sm>AI Copy</Pill>
       </div>
-
-      {activePipeline.length > 0 && (
+      <Label>Target</Label>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        {pipeline.slice(0, 6).map(lead => (
+          <button key={lead.id} onClick={() => setState(s => ({ ...s, selected: lead, output: "" }))}
+            style={{ fontFamily: MONO, fontSize: 10, padding: "5px 12px", borderRadius: 20, cursor: "pointer", background: selected?.id === lead.id ? `${C.purple}18` : "transparent", border: `1px solid ${selected?.id === lead.id ? C.purple : C.border}`, color: selected?.id === lead.id ? C.purple : C.muted }}>
+            {lead.name}
+          </button>
+        ))}
+      </div>
+      {!selected && (
         <>
-          <Label>Pipeline Leads</Label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
-            {activePipeline.map(l => (
-              <button key={l.id} onClick={() => setState(s => ({ ...s, selected: l, custom: "", output: "" }))}
-                style={{ fontFamily: MONO, fontSize: 10, padding: "5px 12px", borderRadius: 20, cursor: "pointer", background: selected?.id === l.id ? `${C.purple}20` : "rgba(255,255,255,0.04)", border: `1px solid ${selected?.id === l.id ? C.purple : C.border}`, color: selected?.id === l.id ? C.purple : C.sub, transition: "all 0.15s" }}>
-                {l.name}
-              </button>
-            ))}
-          </div>
-          <Divider />
+          <Label>Or describe manually</Label>
+          <Field value={custom} onChange={v => setState(s => ({ ...s, custom: v }))} placeholder="Business name, city, rating, website status..." rows={2} />
         </>
       )}
-
-      <Label>Or Describe a Lead</Label>
-      <Field value={custom} onChange={v => setState(s => ({ ...s, custom: v, selected: null }))} placeholder="e.g. Electrician in Fullerton, 4.9 stars, 80 reviews, no website" rows={2} />
-
-      <div style={{ marginTop: 14, marginBottom: 14 }}>
-        <Label>Type</Label>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {types.map(t => (
-            <button key={t.id} onClick={() => setState(s => ({ ...s, type: t.id }))}
-              style={{ fontFamily: MONO, fontSize: 10, padding: "6px 13px", borderRadius: 20, cursor: "pointer", background: type === t.id ? `${C.purple}18` : "transparent", border: `1px solid ${type === t.id ? C.purple : C.border}`, color: type === t.id ? C.purple : C.muted, transition: "all 0.15s" }}>
-              {t.label}
-            </button>
-          ))}
+      {selected && (
+        <div style={{ background: `${C.purple}08`, borderRadius: 8, border: `1px solid ${C.purple}20`, padding: "10px 14px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{selected.name}</span>
+            <button onClick={() => setState(s => ({ ...s, selected: null, output: "" }))} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: MONO, fontSize: 11 }}>clear</button>
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{selected.city} · {selected.rating}★ · {selected.reviews} reviews</span>
         </div>
+      )}
+      <Divider />
+      <Label>Copy Type</Label>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        {types.map(t => (
+          <button key={t.id} onClick={() => setState(s => ({ ...s, type: t.id, output: "" }))}
+            style={{ fontFamily: MONO, fontSize: 10, padding: "5px 14px", borderRadius: 20, cursor: "pointer", background: type === t.id ? `${C.purple}18` : "transparent", border: `1px solid ${type === t.id ? C.purple : C.border}`, color: type === t.id ? C.purple : C.muted }}>
+            {t.label}
+          </button>
+        ))}
       </div>
-
-      <Btn onClick={generate} loading={loading} disabled={!selected && !custom.trim()} color={C.purple}>
-        Generate {types.find(t => t.id === type)?.label}
-      </Btn>
-
+      <Btn onClick={generate} loading={loading} disabled={!selected && !custom.trim()} color={C.purple}>Generate Copy</Btn>
       {(loading || output) && (
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 16 }}>
           <TextBox value={output} loading={loading} placeholder="" />
           {output && <div style={{ marginTop: 8 }}><CopyBtn text={output} sm /></div>}
         </div>
@@ -1719,732 +1636,304 @@ function OutreachModule({ state, setState, pipeline }) {
   );
 }
 
-// ─── FOLLOW-UP HELPERS ────────────────────────────────────────────────────────
-function daysSince(dateStr) {
-  if (!dateStr) return null;
-  const diff = Date.now() - new Date(dateStr).getTime();
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
+// ─── ANALYTICS ────────────────────────────────────────────────────────────────
+const ANALYTICS_KEY = "rws_analytics_v1";
+
+function loadAnalytics() {
+  try { return JSON.parse(localStorage.getItem(ANALYTICS_KEY) || "{}"); } catch { return {}; }
+}
+function saveAnalytics(data) {
+  try { localStorage.setItem(ANALYTICS_KEY, JSON.stringify(data)); } catch {}
 }
 
-function followUpStatus(lead) {
-  if (!["contacted", "followup"].includes(lead.status)) return null;
-  const days = daysSince(lead.contactedAt || lead.addedAt);
-  if (days === null) return null;
-  if (lead.status === "contacted" && days >= 4)  return { label: `${days}d — Follow-up due`, color: C.amber, urgent: true };
-  if (lead.status === "followup"  && days >= 4)  return { label: `${days}d — Second bump due`, color: C.red, urgent: true };
-  if (lead.status === "contacted" && days >= 2)  return { label: `${days}d — Sent`, color: C.blue, urgent: false };
-  return { label: `${days}d since contact`, color: C.muted, urgent: false };
-}
-
-// ─── OUTREACH LOG HELPERS ─────────────────────────────────────────────────────
-function getTodayKey() {
-  return new Date().toLocaleDateString("en-CA");
-}
-
-function getOutreachLog() {
-  try { return JSON.parse(localStorage.getItem("rws_outreach_log") || "{}"); } catch { return {}; }
+function logNicheSearch(niche, aCount, bCount) {
+  const data   = loadAnalytics();
+  const today  = new Date().toISOString().split("T")[0];
+  if (!data.searches) data.searches = [];
+  data.searches.push({ date: today, niche, aCount, bCount });
+  if (data.searches.length > 200) data.searches = data.searches.slice(-200);
+  saveAnalytics(data);
 }
 
 function logOutreach(type) {
-  const log = getOutreachLog();
-  const key = getTodayKey();
-  if (!log[key]) log[key] = { dms: 0, emails: 0 };
-  log[key][type]++;
-  const keys = Object.keys(log).sort().slice(-30);
-  const trimmed = {};
-  keys.forEach(k => { trimmed[k] = log[k]; });
-  localStorage.setItem("rws_outreach_log", JSON.stringify(trimmed));
+  const data  = loadAnalytics();
+  const today = new Date().toISOString().split("T")[0];
+  if (!data.outreach) data.outreach = {};
+  if (!data.outreach[today]) data.outreach[today] = { dms: 0, emails: 0 };
+  if (type === "dms")    data.outreach[today].dms++;
+  if (type === "emails") data.outreach[today].emails++;
+  saveAnalytics(data);
 }
 
-function getWeekLog() {
-  const log = getOutreachLog();
-  let dms = 0, emails = 0;
-  for (let i = 0; i < 7; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toLocaleDateString("en-CA");
-    if (log[key]) { dms += log[key].dms || 0; emails += log[key].emails || 0; }
-  }
-  return { dms, emails, today: log[getTodayKey()] || { dms: 0, emails: 0 } };
-}
-
-// ─── NICHE HISTORY HELPERS ────────────────────────────────────────────────────
-function logNicheSearch(query, aCount, bCount) {
-  try {
-    const key  = "rws_niche_history";
-    const hist = JSON.parse(localStorage.getItem(key) || "[]");
-    hist.push({ query, date: getTodayKey(), aCount, bCount, total: aCount + bCount });
-    localStorage.setItem(key, JSON.stringify(hist.slice(-200)));
-  } catch {}
-}
-
-function getNicheHistory() {
-  try { return JSON.parse(localStorage.getItem("rws_niche_history") || "[]"); } catch { return []; }
-}
-
-// ─── ANALYTICS MODULE ─────────────────────────────────────────────────────────
 function AnalyticsModule({ pipeline }) {
-  const outreachLog  = getOutreachLog();
-  const nicheHistory = getNicheHistory();
+  const [data, setData] = useState({});
 
-  const statusCounts = Object.keys(STATUS).reduce((acc, s) => {
-    acc[s] = pipeline.filter(l => l.status === s).length;
-    return acc;
-  }, {});
-  const total     = pipeline.length;
-  const contacted = pipeline.filter(l => l.status !== "new").length;
-  const warm      = pipeline.filter(l => ["warm","closed"].includes(l.status)).length;
-  const closed    = pipeline.filter(l => l.status === "closed").length;
+  useEffect(() => { setData(loadAnalytics()); }, []);
 
-  const outreachDays = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toLocaleDateString("en-CA");
-    outreachDays.push({
-      date:   key,
-      label:  d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      dms:    outreachLog[key]?.dms    || 0,
-      emails: outreachLog[key]?.emails || 0,
-    });
-  }
-  const totalDMs     = outreachDays.reduce((a, d) => a + d.dms, 0);
-  const totalEmails  = outreachDays.reduce((a, d) => a + d.emails, 0);
-  const activeDays   = outreachDays.filter(d => d.dms + d.emails > 0).length;
-  const maxActivity  = Math.max(...outreachDays.map(d => d.dms + d.emails), 1);
+  const searches = data.searches || [];
+  const outreach = data.outreach || {};
 
-  const nicheMap = {};
-  nicheHistory.forEach(({ query, aCount, bCount }) => {
-    if (!nicheMap[query]) nicheMap[query] = { searches: 0, aTotal: 0, bTotal: 0 };
-    nicheMap[query].searches++;
-    nicheMap[query].aTotal += aCount;
-    nicheMap[query].bTotal += bCount;
-  });
-  const nicheRows = Object.entries(nicheMap)
-    .map(([q, v]) => ({ query: q, ...v, avgA: v.searches ? (v.aTotal / v.searches).toFixed(1) : 0 }))
-    .sort((a, b) => b.aTotal - a.aTotal)
-    .slice(0, 8);
+  const recentSearches = searches.slice(-10).reverse();
+  const last7          = Array.from({ length: 7 }, (_, i) => {
+    const d   = new Date(); d.setDate(d.getDate() - i);
+    const key = d.toISOString().split("T")[0];
+    return { date: key, label: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), dms: outreach[key]?.dms || 0, emails: outreach[key]?.emails || 0 };
+  }).reverse();
 
-  const gradeMap = { A: 0, B: 0, C: 0, D: 0 };
-  pipeline.forEach(l => { const g = resolvedGrade(l); if (gradeMap[g] !== undefined) gradeMap[g]++; });
+  const totalDms    = last7.reduce((a, d) => a + d.dms, 0);
+  const totalEmails = last7.reduce((a, d) => a + d.emails, 0);
 
-  const dataAge = pipeline.length < 3 || activeDays < 2;
+  const statusCounts = pipeline.reduce((acc, l) => { acc[l.status] = (acc[l.status] || 0) + 1; return acc; }, {});
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {dataAge && (
-        <div style={{ background: `${C.amber}08`, border: `1px solid ${C.amber}25`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-          <Dot color={C.amber} size={6} />
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>
-            Early data — trends get meaningful at 30+ days and 10+ pipeline leads. Framework is recording now.
-          </span>
-        </div>
-      )}
-
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-          <Dot color={C.green} />
-          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Pipeline Funnel</span>
-        </div>
-        {total === 0 ? (
-          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No pipeline leads yet.</p>
-        ) : (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
-              {[
-                { label: "Total",     val: total,     color: C.sub,    pct: null },
-                { label: "Contacted", val: contacted,  color: C.blue,   pct: total ? Math.round(contacted / total * 100) : 0 },
-                { label: "Warm",      val: warm,       color: C.green,  pct: contacted ? Math.round(warm / contacted * 100) : 0 },
-                { label: "Closed",    val: closed,     color: C.purple, pct: warm ? Math.round(closed / warm * 100) : 0 },
-              ].map(s => (
-                <div key={s.label} style={{ background: C.cardHi, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
-                  <div style={{ fontFamily: MONO, fontSize: 22, fontWeight: 500, color: s.color, marginBottom: 3 }}>{s.val}</div>
-                  <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: s.pct !== null ? 4 : 0 }}>{s.label}</div>
-                  {s.pct !== null && <div style={{ fontFamily: MONO, fontSize: 10, color: s.color }}>{s.pct}% conv.</div>}
-                </div>
-              ))}
-            </div>
-            <Label>Status Breakdown</Label>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {Object.entries(STATUS).map(([id, st]) => {
-                const count = statusCounts[id] || 0;
-                const pct   = total ? (count / total) * 100 : 0;
-                return (
-                  <div key={id} style={{ display: "grid", gridTemplateColumns: "80px 1fr 32px", gap: 10, alignItems: "center" }}>
-                    <span style={{ fontFamily: MONO, fontSize: 10, color: st.color }}>{st.label}</span>
-                    <div style={{ height: 6, background: "rgba(255,255,255,0.05)", borderRadius: 3, overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${pct}%`, background: st.color, borderRadius: 3, transition: "width 0.4s ease" }} />
-                    </div>
-                    <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, textAlign: "right" }}>{count}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <Divider />
-            <Label>Pipeline Grade Mix</Label>
-            <div style={{ display: "flex", gap: 8 }}>
-              {Object.entries(gradeMap).map(([g, count]) => (
-                <div key={g} style={{ flex: 1, background: C.cardHi, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px", textAlign: "center" }}>
-                  <div style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: GRADE_COLOR[g], marginBottom: 2 }}>{count}</div>
-                  <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase" }}>Grade {g}</div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </Card>
-
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Dot color={C.purple} />
-            <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Outreach Activity</span>
-            <Pill color={C.muted} sm>30 days</Pill>
-          </div>
-          <div style={{ display: "flex", gap: 16 }}>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: C.purple }}>{totalDMs}</div>
-              <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>DMs</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: C.green }}>{totalEmails}</div>
-              <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>Emails</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: C.blue }}>{activeDays}</div>
-              <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>Active days</div>
-            </div>
-          </div>
-        </div>
-        {totalDMs + totalEmails === 0 ? (
-          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No outreach logged yet. DMs and emails are tracked automatically when you copy or send from the Pipeline tab.</p>
-        ) : (
-          <>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 60, marginBottom: 8 }}>
-              {outreachDays.map((d, i) => {
-                const total = d.dms + d.emails;
-                const h = total ? Math.max(4, (total / maxActivity) * 60) : 2;
-                return (
-                  <div key={i} title={`${d.label}: ${d.dms} DMs, ${d.emails} emails`}
-                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", cursor: "default" }}>
-                    <div style={{ width: "100%", borderRadius: "2px 2px 0 0", background: total ? `linear-gradient(to top, ${C.green}90, ${C.purple}90)` : "rgba(255,255,255,0.04)", height: h, transition: "height 0.3s ease" }} />
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{outreachDays[0]?.label}</span>
-              <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{outreachDays[29]?.label}</span>
-            </div>
-          </>
-        )}
-      </Card>
-
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-          <Dot color={C.amber} />
-          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Niche Performance</span>
-        </div>
-        {nicheRows.length === 0 ? (
-          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No searches logged yet. Niche data accumulates as you search in the Leads tab.</p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "0 0 8px", borderBottom: `1px solid ${C.border}`, marginBottom: 8 }}>
-              {["Niche", "Searches", "A Leads", "B Leads", "Avg A"].map(h => (
-                <span key={h} style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: h === "Niche" ? "left" : "right" }}>{h}</span>
-              ))}
-            </div>
-            {nicheRows.map((row, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ fontFamily: MONO, fontSize: 11, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.query}</span>
-                <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textAlign: "right" }}>{row.searches}</span>
-                <span style={{ fontFamily: MONO, fontSize: 11, color: C.green, textAlign: "right" }}>{row.aTotal}</span>
-                <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, textAlign: "right" }}>{row.bTotal}</span>
-                <span style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textAlign: "right" }}>{row.avgA}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-// ─── FOLLOW-UP BANNER CARD ────────────────────────────────────────────────────
-function FollowUpBannerCard({ lead, fu, onStatusChange }) {
-  const [showCopy,    setShowCopy]    = useState(false);
-  const [showDetail,  setShowDetail]  = useState(false);
-  const [draft,       setDraft]       = useState(null);
-  const [generating,  setGenerating]  = useState(false);
-  const [error,       setError]       = useState(null);
-  const [sending,     setSending]     = useState(false);
-  const [sendResult,  setSendResult]  = useState(null);
-  const [showSend,    setShowSend]    = useState(false);
-
-  const bumpNum  = lead.status === "followup" ? "second" : "first";
-  const daysAgo  = lead.contactedAt
-    ? Math.floor((Date.now() - new Date(lead.contactedAt).getTime()) / 86400000)
-    : null;
-
-  const outreachLabel = lead.outreachType === "dm"    ? "DM"
-                      : lead.outreachType === "email" ? "Email"
-                      : null;
-
-  async function generate() {
-    if (draft) { setShowCopy(e => !e); return; }
-    setGenerating(true); setError(null);
-    const wType = lead.websiteType;
-    const wUrl  = lead.website;
-    const websiteCtx =
-      wType === "link_in_bio" ? `Has a link-in-bio page (${wUrl}) — NOT a real website`
-      : wType === "weak"      ? `Has a weak DIY website (${wUrl})`
-      : wType === "real"      ? `Has a real website: ${wUrl}`
-      : wUrl                  ? `Has website: ${wUrl}`
-      : "No website";
-    const ctx = `Business: ${lead.name} | City: ${lead.city} | Category: ${lead.category} | Rating: ${lead.rating}★ | Reviews: ${lead.reviews} | ${websiteCtx}${lead.notes ? ` | Notes: ${lead.notes}` : ""} | Follow-up: ${bumpNum} bump${daysAgo !== null ? ` | ${daysAgo} days since contact` : ""}${outreachLabel ? ` | Original outreach was via: ${outreachLabel}` : ""}`;
-    try {
-      const raw = await ai(
-        RWS_CTX + `\n\nWrite a follow-up IG DM and follow-up email. This is the ${bumpNum} follow-up${daysAgo !== null ? ` — ${daysAgo} days since last contact` : ""}. They haven't replied. Tone rules: genuinely casual, one soft touch, no urgency language, no repeating the pain point twice, no filler openers like "no worries if you've been busy". Reference their situation once, briefly. Leave the door open. Return ONLY valid JSON, no backticks:
-{"dm":"2 sentences max. Mention you reached out, leave it open. No pressure language. REQUIRED — last line must be exactly this, no exceptions: Trafton Rogers | RWS | trogers@rogers-websolutions.com","emailSubject":"Short low-key subject — not salesy","emailBody":"3 short paragraphs max. First: brief callback to original outreach, one sentence. Second: one specific observation about their business — not repeated urgency. Third: soft CTA to rogers-websolutions.com/book, no pressure. NEVER use phrases like: lost bookings every day, you are missing out, most clients search online first, no worries if you have been busy. REQUIRED — last line must be exactly this, no exceptions: Trafton Rogers | RWS | trogers@rogers-websolutions.com"}`,
-        ctx
-      );
-      if (raw.startsWith("Error:")) { setError(raw); }
-      else {
-        try { setDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
-        catch { setDraft({ dm: raw, emailSubject: `Following up — ${lead.name}`, emailBody: raw }); }
-        setShowCopy(true);
-      }
-    } catch (e) { setError(`Error: ${e.message}`); }
-    setGenerating(false);
-  }
-
-  async function handleSend() {
-    if (!lead.email || !draft) return;
-    setSending(true); setSendResult(null);
-    const result = await sendEmail(lead.email, draft.emailSubject, draft.emailBody);
-    setSending(false);
-    if (result.success) { setSendResult("sent"); logOutreach("emails"); onStatusChange(lead.id, "followup", "email"); }
-    else { setSendResult(result.error || "unknown error"); }
-  }
-
-  return (
-    <div style={{ background: `${C.red}08`, border: `1px solid ${C.red}30`, borderRadius: 10, overflow: "hidden" }}>
-
-      {/* ── Header row ── */}
-      <div style={{ padding: "12px 16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{lead.name}</span>
-            {lead.city && <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{lead.city}</span>}
-            {lead.grade && <Pill color={GRADE_COLOR[resolvedGrade(lead)] || C.muted} sm>Grade {resolvedGrade(lead)}</Pill>}
-            {outreachLabel && <Pill color={outreachLabel === "DM" ? C.purple : C.green} sm>{outreachLabel} sent</Pill>}
-          </div>
-          <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>
-          {/* Inline contact summary — always visible */}
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 5 }}>
-            {lead.email    && <span style={{ fontFamily: MONO, fontSize: 10, color: C.green }}>{lead.email}</span>}
-            {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || "IG"}</a>}
-            {lead.phone    && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{lead.phone}</span>}
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", flexShrink: 0 }}>
-          <Btn sm color={C.muted} onClick={() => setShowDetail(d => !d)}>
-            {showDetail ? "Hide Detail" : "Show Detail"}
-          </Btn>
-          <Btn sm color={C.blue} loading={generating} onClick={generate}>
-            {draft ? (showCopy ? "Hide Copy" : "Show Copy") : "Get Copy"}
-          </Btn>
-        </div>
-      </div>
-
-      {/* ── Expanded detail panel ── */}
-      {showDetail && (
-        <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px", background: "rgba(0,0,0,0.2)" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-
-            {/* Contact info */}
-            <div>
-              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 6px" }}>Contact</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {lead.email
-                  ? <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{lead.email}</span>
-                  : <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>No email</span>}
-                {lead.instagram
-                  ? <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || lead.instagram}</a>
-                  : <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>No Instagram</span>}
-                {lead.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{lead.phone}</span>}
-              </div>
-            </div>
-
-            {/* Outreach history */}
-            <div>
-              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 6px" }}>Outreach History</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {lead.contactedAt
-                  ? <span style={{ fontFamily: MONO, fontSize: 11, color: C.blue }}>First contact: {new Date(lead.contactedAt).toLocaleDateString()}</span>
-                  : <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>No contact date logged</span>}
-                {daysAgo !== null && <span style={{ fontFamily: MONO, fontSize: 11, color: fu.color }}>{daysAgo}d since last contact</span>}
-                {outreachLabel
-                  ? <span style={{ fontFamily: MONO, fontSize: 11, color: outreachLabel === "DM" ? C.purple : C.green }}>Sent via: {outreachLabel}</span>
-                  : <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>Channel not logged</span>}
-                <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>Bump: {bumpNum === "second" ? "2nd follow-up" : "1st follow-up"}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Notes */}
-          {lead.notes && (
-            <div style={{ marginBottom: 12 }}>
-              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 4px" }}>Notes</p>
-              <p style={{ fontFamily: MONO, fontSize: 11, color: C.sub, margin: 0, fontStyle: "italic", lineHeight: 1.6 }}>{lead.notes}</p>
-            </div>
-          )}
-
-          {/* Action buttons */}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Btn sm color={C.purple} onClick={() => onStatusChange(lead.id, "followup", "dm")}>Mark DM Sent</Btn>
-            <Btn sm color={C.green}  onClick={() => onStatusChange(lead.id, "followup", "email")}>Mark Email Sent</Btn>
-            <Btn sm color={C.green}  onClick={() => onStatusChange(lead.id, "warm")}>Mark Warm</Btn>
-            <Btn sm color={C.red}    onClick={() => onStatusChange(lead.id, "cold")}>Mark Cold</Btn>
-          </div>
-        </div>
-      )}
-
-      {/* ── Copy output ── */}
-      {error && (
-        <div style={{ margin: "0 16px 12px", padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{error}</span>
-        </div>
-      )}
-      {showCopy && draft && (
-        <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <Dot color={C.blue} size={5} />
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-              {bumpNum === "second" ? "2nd Bump" : "1st Bump"}{daysAgo !== null ? ` · ${daysAgo}d since contact` : ""}
-            </span>
-          </div>
-          {/* DM */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <Label>Follow-up DM</Label>
-              <div style={{ display: "flex", gap: 6 }}>
-                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={() => { logOutreach("dms"); onStatusChange(lead.id, "followup", "dm"); }} />
-                {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>Open IG</a>}
-              </div>
-            </div>
-            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
-          </div>
-          {/* Email */}
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <Label>Follow-up Email</Label>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
-                {lead.email
-                  ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Cancel" : "Send via Gmail"}</Btn>
-                  : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email to send</span>
-                }
-              </div>
-            </div>
-            <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
-            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
-            {showSend && lead.email && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 12px", background: "rgba(0,0,0,0.3)", border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 8 }}>
-                  <span style={{ fontFamily: MONO, fontSize: 9, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", whiteSpace: "nowrap", paddingTop: 1 }}>SUBJECT</span>
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, lineHeight: 1.5, wordBreak: "break-word" }}>{draft.emailSubject}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
-                  <Dot color={C.green} size={5} />
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>To: {lead.email}</span>
-                </div>
-                <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
-              </div>
-            )}
-            {sendResult === "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
-            {sendResult && sendResult !== "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed: {sendResult}</p>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── PIPELINE MODULE ──────────────────────────────────────────────────────────
-function PipelineModule({ pipeline, onUpdate, onRemove, onAdd, onLogOutreach }) {
-  const [filter,      setFilter]      = useState("all");
-  const [showModal,   setShowModal]   = useState(false);
-  const [weekLog,     setWeekLog]     = useState(() => getWeekLog());
-
-  const active    = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
-  const closed    = pipeline.filter(l => l.status === "closed").length;
-  const contacted = pipeline.filter(l => l.status !== "new").length;
-
-  const followUps = pipeline.filter(l => {
-    const fu = followUpStatus(l);
-    return fu?.urgent;
-  });
-
-  const visible = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
-
-  function handleStatusChange(id, newStatus, outreachType) {
-    const patch = { status: newStatus };
-    if (newStatus === "contacted" || newStatus === "followup") {
-      patch.contactedAt = new Date().toISOString();
-      if (outreachType) patch.outreachType = outreachType;
-    }
-    onUpdate(id, patch);
-  }
-
-  function handleLogDM() {
-    logOutreach("dms");
-    setWeekLog(getWeekLog());
-  }
-
-  function handleLogEmail() {
-    logOutreach("emails");
-    setWeekLog(getWeekLog());
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-      {/* Stats row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
         {[
-          { label: "Total",     val: pipeline.length, color: C.sub    },
-          { label: "Active",    val: active,          color: C.green  },
-          { label: "Contacted", val: contacted,       color: C.blue   },
-          { label: "Closed",    val: closed,          color: C.purple },
+          { label: "Pipeline",     val: pipeline.length,  color: C.green  },
+          { label: "DMs (7d)",     val: totalDms,         color: C.purple },
+          { label: "Emails (7d)",  val: totalEmails,      color: C.blue   },
         ].map(s => (
-          <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
-            <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 500, color: s.color, marginBottom: 3 }}>{s.val}</div>
-            <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{s.label}</div>
-          </div>
+          <Card key={s.label} style={{ padding: "16px 20px", textAlign: "center" }}>
+            <div style={{ fontFamily: MONO, fontSize: 28, fontWeight: 500, color: s.color, marginBottom: 4 }}>{s.val}</div>
+            <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{s.label}</div>
+          </Card>
         ))}
       </div>
 
-      {/* Outreach log + Add Lead button */}
-      <Card style={{ padding: "16px 20px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <Label>Outreach Log</Label>
-            <div style={{ display: "flex", gap: 20 }}>
-              <div>
-                <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: C.purple }}>{weekLog.today.dms}</span>
-                <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: 6 }}>DMs today</span>
-              </div>
-              <div>
-                <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: C.green }}>{weekLog.today.emails}</span>
-                <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: 6 }}>Emails today</span>
-              </div>
-              <div>
-                <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: C.blue }}>{weekLog.dms + weekLog.emails}</span>
-                <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: 6 }}>Total this week</span>
+      <Card>
+        <Label>Outreach — Last 7 Days</Label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {last7.map(d => (
+            <div key={d.date} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, width: 90, flexShrink: 0 }}>{d.label}</span>
+              <div style={{ flex: 1, display: "flex", gap: 6 }}>
+                {d.dms > 0 && <span style={{ fontFamily: MONO, fontSize: 10, color: C.purple, background: `${C.purple}12`, borderRadius: 4, padding: "2px 8px" }}>{d.dms} DM{d.dms !== 1 ? "s" : ""}</span>}
+                {d.emails > 0 && <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue, background: `${C.blue}12`, borderRadius: 4, padding: "2px 8px" }}>{d.emails} email{d.emails !== 1 ? "s" : ""}</span>}
+                {d.dms === 0 && d.emails === 0 && <span style={{ fontFamily: MONO, fontSize: 10, color: "rgba(255,255,255,0.1)" }}>—</span>}
               </div>
             </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Btn onClick={() => setShowModal(true)} color={C.green} sm>+ Add Lead</Btn>
-            <Btn onClick={handleLogDM} color={C.purple} sm>+ DM Sent</Btn>
-            <Btn onClick={handleLogEmail} color={C.green} sm>+ Email Sent</Btn>
-          </div>
+          ))}
         </div>
       </Card>
 
-      {/* Follow-up due */}
-      {followUps.length > 0 && (
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <Dot color={C.red} pulse />
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.red, letterSpacing: "0.12em", textTransform: "uppercase" }}>Follow-up Due ({followUps.length})</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {followUps.map(l => {
-              const fu = followUpStatus(l);
-              return (
-                <FollowUpBannerCard
-                  key={l.id}
-                  lead={l}
-                  fu={fu}
-                  onStatusChange={handleStatusChange}
-                />
-              );
-            })}
-          </div>
+      <Card>
+        <Label>Pipeline by Status</Label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {Object.entries(STATUS).map(([id, st]) => (
+            <div key={id} style={{ display: "flex", alignItems: "center", gap: 6, background: `${st.color}08`, border: `1px solid ${st.color}20`, borderRadius: 8, padding: "6px 12px" }}>
+              <Dot color={st.color} size={5} />
+              <span style={{ fontFamily: MONO, fontSize: 11, color: st.color }}>{st.label}</span>
+              <span style={{ fontFamily: MONO, fontSize: 13, color: C.text, fontWeight: 500 }}>{statusCounts[id] || 0}</span>
+            </div>
+          ))}
         </div>
-      )}
+      </Card>
 
-      {/* Status filter */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {[{ id: "all", label: `All (${pipeline.length})` }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: `${s.label} (${pipeline.filter(l => l.status === id).length})` }))].map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)}
-            style={{ fontFamily: MONO, fontSize: 10, padding: "5px 12px", borderRadius: 20, cursor: "pointer", background: filter === f.id ? `${C.green}14` : "transparent", border: `1px solid ${filter === f.id ? C.green : C.border}`, color: filter === f.id ? C.green : C.muted }}>
-            {f.label}
+      <Card>
+        <Label>Recent Searches</Label>
+        {recentSearches.length === 0
+          ? <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No searches yet.</p>
+          : <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {recentSearches.map((s, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, width: 80, flexShrink: 0 }}>{s.date}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.text, flex: 1 }}>{s.niche}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.green }}>{s.aCount}A</span>
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber }}>{s.bCount}B</span>
+                </div>
+              ))}
+            </div>
+        }
+      </Card>
+    </div>
+  );
+}
+
+// ─── FOLLOW-UP HELPER ─────────────────────────────────────────────────────────
+function followUpStatus(lead) {
+  if (!lead.contactedAt || !["contacted", "followup"].includes(lead.status)) return null;
+  const days = Math.floor((Date.now() - new Date(lead.contactedAt).getTime()) / 86400000);
+  if (lead.status === "contacted") {
+    if (days >= 4)  return { label: `Follow-up due (${days}d)`, color: C.amber, urgent: days >= 6 };
+    return { label: `${4 - days}d until follow-up`, color: C.muted, urgent: false };
+  }
+  if (lead.status === "followup") {
+    if (days >= 8)  return { label: `2nd follow-up due (${days}d)`, color: C.red, urgent: true };
+    return { label: `${8 - days}d until 2nd follow-up`, color: C.muted, urgent: false };
+  }
+  return null;
+}
+
+// ─── FOLLOW-UP BANNER ─────────────────────────────────────────────────────────
+function FollowUpBanner({ pipeline, onTabSwitch }) {
+  const due = pipeline.filter(l => {
+    const fu = followUpStatus(l);
+    return fu?.urgent;
+  });
+  if (due.length === 0) return null;
+  return (
+    <div style={{ background: `${C.amber}10`, border: `1px solid ${C.amber}30`, borderRadius: 10, padding: "12px 18px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Dot color={C.amber} pulse />
+        <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>{due.length} lead{due.length !== 1 ? "s" : ""} need a follow-up</span>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {due.slice(0, 3).map(l => <Pill key={l.id} color={C.amber} sm>{l.name}</Pill>)}
+          {due.length > 3 && <Pill color={C.muted} sm>+{due.length - 3} more</Pill>}
+        </div>
+      </div>
+      <Btn onClick={() => onTabSwitch("pipeline")} color={C.amber} sm>Go to Pipeline</Btn>
+    </div>
+  );
+}
+
+// ─── ROOT APP ─────────────────────────────────────────────────────────────────
+export default function Home() {
+  const [screen,   setScreen]   = useState("pin");
+  const [tab,      setTab]      = useState("leads");
+  const [pipeline, setPipeline] = useState([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  const [emailState,    setEmailState]    = useState({});
+  const [calState,      setCalState]      = useState({});
+  const [leadsState,    setLeadsState]    = useState({ niche: "", prospects: [] });
+  const [outreachState, setOutreachState] = useState({ type: "cold", output: "", custom: "" });
+
+  const pipelineNames = new Set(pipeline.map(l => l.name));
+
+  function handlePrepReady({ prospects, niche, pipeline: prepPipeline }) {
+    setLeadsState(s => ({ ...s, prospects, niche }));
+    if (prepPipeline) setPipeline(prepPipeline);
+  }
+
+  useEffect(() => {
+    if (screen === "app") loadPipeline().then(setPipeline);
+  }, [screen]);
+
+  function addToPipeline(prospect) {
+    if (pipelineNames.has(prospect.name)) return;
+    const entry = {
+      id:      `${Date.now()}-${Math.random()}`,
+      status:  "new",
+      notes:   "",
+      addedAt: new Date().toLocaleDateString(),
+      ...prospect,
+    };
+    const updated = [...pipeline, entry];
+    setPipeline(updated);
+    savePipeline(updated);
+  }
+
+  function updateLead(id, patch) {
+    const updated = pipeline.map(l => l.id === id ? { ...l, ...patch } : l);
+    setPipeline(updated);
+    savePipeline(updated);
+  }
+
+  function removeLead(id) {
+    const updated = pipeline.filter(l => l.id !== id);
+    setPipeline(updated);
+    savePipeline(updated);
+  }
+
+  function statusChange(id, status, outreachType) {
+    const updated = pipeline.map(l => {
+      if (l.id !== id) return l;
+      const patch = { ...l, status };
+      if (status === "contacted") {
+        patch.contactedAt  = new Date().toISOString();
+        patch.outreachType = outreachType || l.outreachType;
+      }
+      if (status === "followup" && outreachType) patch.outreachType = outreachType;
+      return patch;
+    });
+    setPipeline(updated);
+    savePipeline(updated);
+  }
+
+  const TABS = [
+    { id: "leads",    label: "Leads"    },
+    { id: "outreach", label: "Outreach" },
+    { id: "pipeline", label: "Pipeline", badge: pipeline.length },
+    { id: "analytics",label: "Analytics"},
+  ];
+
+  if (screen === "pin")   return <PinGate onUnlock={() => setScreen("login")} />;
+  if (screen === "login") return <LoginScreen onEnter={() => setScreen("app")} onPrepReady={handlePrepReady} />;
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: BODY }}>
+      <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Azeret+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* Nav */}
+      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 52, position: "sticky", top: 0, background: C.bg, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <span style={{ fontFamily: SERIF, fontSize: 17, color: C.white, letterSpacing: "-0.01em" }}>RWS Command</span>
+          <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>· ops.rogers-websolutions.com</span>
+        </div>
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Dot color={C.green} size={6} /><span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>AI</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Dot color={C.green} size={6} /><span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Pipeline</span></div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "0 24px", display: "flex", gap: 4, overflowX: "auto" }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", padding: "14px 16px", background: "transparent", border: "none", borderBottom: `2px solid ${tab === t.id ? C.amber : "transparent"}`, color: tab === t.id ? C.amber : C.muted, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 7 }}>
+            {t.label}
+            {t.badge > 0 && <span style={{ fontFamily: MONO, fontSize: 9, background: `${C.green}20`, color: C.green, border: `1px solid ${C.green}40`, borderRadius: 10, padding: "1px 6px" }}>{t.badge}</span>}
           </button>
         ))}
       </div>
 
-      {/* Lead cards */}
-      {pipeline.length === 0
-        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet — search in Leads tab or hit + Add Lead to enter one manually</p></Card>
-        : visible.length === 0
-          ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
-          : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {visible.map(l => (
-                <PipelineCard
-                  key={l.id}
-                  lead={l}
-                  onUpdate={onUpdate}
-                  onRemove={onRemove}
-                  onStatusChange={handleStatusChange}
-                />
-              ))}
+      {/* Content */}
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 20px" }}>
+        <FollowUpBanner pipeline={pipeline} onTabSwitch={setTab} />
+
+        {tab === "leads" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <Btn onClick={() => setShowAddModal(true)} color={C.green} sm>+ Add Lead Manually</Btn>
             </div>
-      }
-
-      {/* Modal */}
-      {showModal && (
-        <AddLeadModal
-          onAdd={onAdd}
-          onClose={() => setShowModal(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-// ─── COMMAND CENTER ────────────────────────────────────────────────────────────
-function CommandCenter({ prepData }) {
-  const [tab, setTab] = useState("leads");
-  const [pipelineLoaded, setPipelineLoaded] = useState(false);
-  const [leadsState,    setLeadsState]    = useState({
-    niche:     prepData?.niche || "",
-    prospects: prepData?.prospects || [],
-    loading:   false,
-    error:     "",
-  });
-  const [outreachState, setOutreachState] = useState({ type: "cold" });
-  const [pipeline, setPipelineRaw] = useState([]);
-
-  useEffect(() => {
-    if (prepData?.pipeline?.length > 0) {
-      setPipelineRaw(prepData.pipeline);
-      setPipelineLoaded(true);
-    } else {
-      loadPipeline().then(saved => {
-        setPipelineRaw(saved);
-        setPipelineLoaded(true);
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (pipelineLoaded && pipeline.length >= 0) {
-      savePipeline(pipeline);
-    }
-  }, [pipeline, pipelineLoaded]);
-
-  function addToPipeline(prospect) {
-    if (pipelineNames.has(prospect.name)) return;
-    setPipelineRaw(p => [...p, {
-      id: `${Date.now()}-${Math.random()}`,
-      status: prospect.status || "new",
-      notes: "",
-      addedAt: new Date().toLocaleDateString(),
-      ...prospect,
-    }]);
-  }
-
-  function updateLead(id, patch) {
-    setPipelineRaw(p => p.map(l => l.id === id ? { ...l, ...patch } : l));
-  }
-
-  function removeLead(id) {
-    setPipelineRaw(p => p.filter(l => l.id !== id));
-  }
-
-  const pipelineNames  = new Set(pipeline.map(l => l.name));
-  const activePipeline = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
-  const followUpDue    = pipeline.filter(l => followUpStatus(l)?.urgent).length;
-
-  const tabs = [
-    { id: "leads",     label: "Leads",     dot: C.amber  },
-    { id: "outreach",  label: "Outreach",  dot: C.purple },
-    { id: "pipeline",  label: "Pipeline",  dot: followUpDue > 0 ? C.red : C.green, badge: followUpDue > 0 ? `${followUpDue} due` : (activePipeline || null) },
-    { id: "analytics", label: "Analytics", dot: C.blue   },
-  ];
-
-  return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: BODY, backgroundImage: `radial-gradient(ellipse 70% 35% at 10% 0%, rgba(0,230,118,0.03) 0%, transparent 50%)` }}>
-      {/* ── Top bar ── */}
-      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "0 16px" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 48, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
-            <Dot color={C.green} pulse size={8} />
-            <span style={{ fontFamily: MONO, fontSize: 12, color: C.text, letterSpacing: "0.04em", whiteSpace: "nowrap" }}>RWS Command</span>
-            <span className="rws-hide-mobile" style={{ fontFamily: MONO, fontSize: 10, color: C.muted, whiteSpace: "nowrap" }}>· ops.rogers-websolutions.com</span>
+            <LeadScraper state={leadsState} setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} pipeline={pipeline} />
           </div>
-          <div className="rws-hide-mobile" style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
-            {[{ c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
-              <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <Dot color={s.c} size={5} />
-                <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{s.l}</span>
-              </div>
-            ))}
+        )}
+
+        {tab === "outreach" && (
+          <div style={{ display: "grid", gap: 20 }}>
+            <EmailModule    state={emailState}    setState={setEmailState}    />
+            <CalendarModule state={calState}      setState={setCalState}      />
+            <OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} />
           </div>
-          {/* Mobile: just show pipeline status dot */}
-          <div className="rws-show-mobile" style={{ display: "none", alignItems: "center", gap: 5, flexShrink: 0 }}>
-            <Dot color={pipelineLoaded ? C.green : C.amber} size={5} />
-            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>Pipeline</span>
+        )}
+
+        {tab === "pipeline" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {pipeline.length === 0
+              ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>Pipeline is empty — add leads from the Leads tab.</p></Card>
+              : pipeline.map(lead => (
+                  <PipelineCard key={lead.id} lead={lead} onUpdate={updateLead} onRemove={removeLead} onStatusChange={statusChange} />
+                ))
+            }
           </div>
-        </div>
+        )}
+
+        {tab === "analytics" && <AnalyticsModule pipeline={pipeline} />}
       </div>
 
-      {/* ── Tab row — horizontally scrollable on mobile ── */}
-      <div style={{ borderBottom: `1px solid ${C.border}`, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", gap: 0, padding: "0 8px", minWidth: "max-content" }}>
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", padding: "12px 12px", border: "none", background: "transparent", cursor: "pointer", color: tab === t.id ? C.text : C.muted, borderBottom: `2px solid ${tab === t.id ? t.dot : "transparent"}`, transition: "all 0.15s", whiteSpace: "nowrap", flexShrink: 0 }}>
-              <Dot color={tab === t.id ? t.dot : C.muted} size={5} />
-              {t.label}
-              {t.badge && <span style={{ fontFamily: MONO, fontSize: 9, padding: "1px 6px", borderRadius: 10, background: `${C.green}20`, color: C.green, border: `1px solid ${C.green}30` }}>{t.badge}</span>}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "20px 16px" }}>
-        <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} pipeline={pipeline} /></div>
-        <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
-        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead} onRemove={removeLead} onAdd={addToPipeline} /></div>
-        <div style={{ display: tab === "analytics" ? "block" : "none" }}><AnalyticsModule pipeline={pipeline} /></div>
-      </div>
+      {showAddModal && <AddLeadModal onAdd={lead => { addToPipeline(lead); }} onClose={() => setShowAddModal(false)} />}
 
       <style>{`
         @keyframes blink{0%,100%{opacity:1}50%{opacity:0.25}}
         @keyframes ripple{0%{box-shadow:0 0 0 0 rgba(0,230,118,0.45)}100%{box-shadow:0 0 0 12px rgba(0,230,118,0)}}
-        *{box-sizing:border-box} button:hover:not(:disabled){opacity:0.8}
+        *{box-sizing:border-box}
+        button:hover:not(:disabled){opacity:0.8}
+        ::-webkit-scrollbar{width:4px;height:4px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
         textarea::placeholder,input::placeholder{color:rgba(255,255,255,0.16)}
         select option{background:#0d0f14}
-        ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px}
-        @media(max-width:600px){
-          .rws-hide-mobile{display:none!important}
-          .rws-show-mobile{display:flex!important}
-        }
       `}</style>
     </div>
   );
-}
-
-// ─── ROOT ──────────────────────────────────────────────────────────────────────
-export default function Home() {
-  const [phase,    setPhase]    = useState("pin");
-  const [prepData, setPrepData] = useState(null);
-
-  if (phase === "pin")   return <PinGate    onUnlock={() => setPhase("login")} />;
-  if (phase === "login") return <LoginScreen onEnter={() => setPhase("app")} onPrepReady={data => setPrepData(data)} />;
-  return <CommandCenter prepData={prepData} />;
 }
