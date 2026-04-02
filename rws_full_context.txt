@@ -1,3 +1,752 @@
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\auth\callback\route.js
+// src/app/api/auth/callback/route.js
+// Step 2 of OAuth: Google redirects here with a code, we exchange for tokens
+// After this runs, copy the refresh_token printed to Vercel logs into your env vars
+
+import { getOAuthClient } from "@/lib/google";
+
+export async function GET(req) {
+  const { searchParams } = new URL(req.url);
+  const code = searchParams.get("code");
+
+  if (!code) {
+    return Response.json({ error: "No code returned from Google" }, { status: 400 });
+  }
+
+  try {
+    const client = getOAuthClient();
+    const { tokens } = await client.getToken(code);
+
+    // Log the refresh token — copy this into Vercel env as GOOGLE_REFRESH_TOKEN
+    console.log("=== GOOGLE TOKENS RECEIVED ===");
+    console.log("refresh_token:", tokens.refresh_token);
+    console.log("access_token:", tokens.access_token);
+    console.log("==============================");
+
+    return new Response(
+      `
+      <html><body style="background:#07080b;color:#00e676;font-family:monospace;padding:40px">
+        <h2>✓ Google Authorization Complete</h2>
+        <p>Copy this refresh token into Vercel as <strong>GOOGLE_REFRESH_TOKEN</strong>:</p>
+        <code style="background:#111;padding:12px;display:block;margin:16px 0;word-break:break-all;color:#29b6f6">
+          ${tokens.refresh_token || "(check Vercel function logs — token printed there)"}
+        </code>
+        <p>Once added to Vercel env vars, redeploy and Gmail + Calendar will be live.</p>
+        <a href="/" style="color:#00e676">← Back to app</a>
+      </body></html>
+      `,
+      { headers: { "Content-Type": "text/html" } }
+    );
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\auth\google\route.js
+// src/app/api/auth/google/route.js
+// Step 1 of OAuth: redirects Trafton to Google consent screen
+// Visit /api/auth/google once in browser to authorize
+
+import { getOAuthClient } from "@/lib/google";
+
+export async function GET() {
+  const client = getOAuthClient();
+
+  const url = client.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent", // forces refresh_token to be returned every time
+    scope: [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/calendar.readonly",
+    ],
+  });
+
+  return Response.redirect(url);
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\calendar\route.js
+// src/app/api/calendar/route.js
+// Fetches real upcoming calendar events
+
+import { google } from "googleapis";
+import { getOAuthClient, isAuthorized } from "@/lib/google";
+
+export async function GET(req) {
+  if (!isAuthorized()) {
+    return Response.json({
+      error: "Google not authorized. Visit /api/auth/google to connect.",
+      authorized: false,
+    }, { status: 401 });
+  }
+
+  try {
+    const auth = getOAuthClient();
+    const calendar = google.calendar({ version: "v3", auth });
+
+    const { searchParams } = new URL(req.url);
+    const days = parseInt(searchParams.get("days") || "7");
+
+    const now = new Date();
+    const end = new Date();
+    end.setDate(end.getDate() + days);
+
+    const res = await calendar.events.list({
+      calendarId: "primary",
+      timeMin: now.toISOString(),
+      timeMax: end.toISOString(),
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: 20,
+    });
+
+    const events = (res.data.items || []).map((e) => ({
+      id: e.id,
+      title: e.summary || "(No title)",
+      start: e.start?.dateTime || e.start?.date,
+      end: e.end?.dateTime || e.end?.date,
+      location: e.location || null,
+      description: e.description || null,
+      allDay: !e.start?.dateTime,
+    }));
+
+    return Response.json({ events, authorized: true });
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\chat\route.js
+// src/app/api/chat/route.js
+// Anthropic API proxy — rate limited, validates input
+
+import { chatLimiter } from "@/lib/rateLimit";
+
+export async function POST(req) {
+  const rl = chatLimiter("chat");
+  if (!rl.allowed) {
+    return Response.json({ error: { message: "Too many requests" } }, { status: 429 });
+  }
+
+  try {
+    const body = await req.json();
+
+    if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
+      return Response.json({ error: { message: "Invalid messages" } }, { status: 400 });
+    }
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: Math.min(body.max_tokens || 1000, 2000),
+        system: body.system,
+        messages: body.messages,
+      }),
+    });
+
+    const data = await response.json();
+    return Response.json(data);
+  } catch (err) {
+    return Response.json({ error: { message: err.message } }, { status: 500 });
+  }
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\dismissed\route.js
+// src/app/api/dismissed/route.js
+// Stores dismissed lead names in Redis so they never resurface
+
+import { pipelineLimiter } from "@/lib/rateLimit";
+
+const DISMISSED_KEY = "rws_dismissed_v1";
+
+function isAuthorizedRequest(req) {
+  const pin = req.headers.get("x-app-pin");
+  const serverPin = process.env.APP_PIN;
+  if (!serverPin) return true;
+  return pin === serverPin;
+}
+
+async function getRedis() {
+  const url   = process.env.KV_REST_API_URL   || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  const { Redis } = await import("@upstash/redis");
+  return new Redis({ url, token });
+}
+
+// GET — load dismissed set
+export async function GET(req) {
+  if (!isAuthorizedRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const redis = await getRedis();
+    if (!redis) return Response.json({ dismissed: [] });
+    const dismissed = await redis.get(DISMISSED_KEY) || [];
+    return Response.json({ dismissed });
+  } catch (err) {
+    return Response.json({ dismissed: [], error: err.message });
+  }
+}
+
+// POST — add a dismissed name
+export async function POST(req) {
+  if (!isAuthorizedRequest(req)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const { name } = await req.json();
+    if (!name) return Response.json({ error: "Name required" }, { status: 400 });
+    const redis = await getRedis();
+    if (!redis) return Response.json({ success: false });
+    const existing = await redis.get(DISMISSED_KEY) || [];
+    if (!existing.includes(name)) {
+      await redis.set(DISMISSED_KEY, [...existing, name]);
+    }
+    return Response.json({ success: true });
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\enrich\route.js
+// src/app/api/enrich/route.js
+// Enriches a lead with email and Instagram:
+// 1. Scrape website for email + IG + follow link-in-bio pages
+// 2. Apollo.io for owner email
+// 3. SerpAPI Google search for Instagram
+
+import { enrichLimiter } from "@/lib/rateLimit";
+
+// Known link-in-bio domains — follow these to find real contact info
+const LINK_IN_BIO_DOMAINS = [
+  "campsite.bio", "linktree.com", "linktr.ee", "beacons.ai",
+  "bio.link", "later.com/bio", "tap.bio", "lnk.bio",
+  "allmylinks.com", "linkpop.com", "stan.store",
+];
+
+function isLinkInBio(url) {
+  try {
+    const host = new URL(url).hostname.replace("www.", "");
+    return LINK_IN_BIO_DOMAINS.some(d => host.includes(d));
+  } catch { return false; }
+}
+
+function extractEmails(html) {
+  const BLOCKLIST = [
+    "example.com", "sentry.io", "wix.com", "wordpress", "schema.org",
+    "w3.org", "cloudflare", "google.com", "facebook.com", "apple.com",
+    "microsoft.com", "amazon.com", "yourcompany", "youremail", "email.com",
+  ];
+  const matches = html.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g) || [];
+  return matches.filter(e =>
+    !BLOCKLIST.some(b => e.toLowerCase().includes(b)) &&
+    !e.endsWith(".png") && !e.endsWith(".jpg") && !e.endsWith(".svg") &&
+    e.length < 100
+  );
+}
+
+function extractInstagram(html) {
+  const match = html.match(/https?:\/\/(www\.)?instagram\.com\/([a-zA-Z0-9_.]{2,30})\/?/);
+  if (!match) return null;
+  const handle = match[2];
+  if (["p", "explore", "reel", "stories", "tv"].includes(handle)) return null;
+  return {
+    url: `https://www.instagram.com/${handle}/`,
+    handle: `@${handle}`,
+  };
+}
+
+async function scrapePage(url) {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; RWSBot/1.0)" },
+      signal: AbortSignal.timeout(7000),
+      redirect: "follow",
+    });
+    return await res.text();
+  } catch { return null; }
+}
+
+export async function POST(req) {
+  const rl = enrichLimiter("enrich");
+  if (!rl.allowed) {
+    return Response.json({ error: "Too many requests", enriched: false }, { status: 429 });
+  }
+
+  try {
+    const { name, website, city, category, phone } = await req.json();
+
+    if (!name?.trim()) {
+      return Response.json({ error: "Business name required", enriched: false }, { status: 400 });
+    }
+
+    const result = {
+      email: null,
+      emailSource: null,
+      instagram: null,
+      instagramHandle: null,
+      instagramSource: null,
+      websiteType: null, // "real" | "link_in_bio" | null
+      enriched: false,
+    };
+
+    // ── STEP 1: Scrape website / link-in-bio ─────────────────────────────────
+    if (website) {
+      const isLIB = isLinkInBio(website);
+      result.websiteType = isLIB ? "link_in_bio" : "real";
+
+      const html = await scrapePage(website);
+      if (html) {
+        // Extract email
+        const emails = extractEmails(html);
+        if (emails.length > 0) {
+          result.email = emails[0];
+          result.emailSource = isLIB ? "link_in_bio" : "website";
+        }
+
+        // Extract Instagram
+        if (!isLIB) {
+          const ig = extractInstagram(html);
+          if (ig) {
+            result.instagram = ig.url;
+            result.instagramHandle = ig.handle;
+            result.instagramSource = "website";
+          }
+        }
+
+        // If it's a link-in-bio, also look for linked URLs and scrape those
+        if (isLIB && !result.email) {
+          const linkedUrls = [...html.matchAll(/href=["'](https?:\/\/[^"']+)["']/g)]
+            .map(m => m[1])
+            .filter(u => !isLinkInBio(u) && !u.includes("instagram.com") && !u.includes("facebook.com") && !u.includes("tiktok.com"));
+
+          for (const linkedUrl of linkedUrls.slice(0, 3)) {
+            const linkedHtml = await scrapePage(linkedUrl);
+            if (linkedHtml) {
+              const linkedEmails = extractEmails(linkedHtml);
+              if (linkedEmails.length > 0) {
+                result.email = linkedEmails[0];
+                result.emailSource = "linked_site";
+                result.linkedSite = linkedUrl;
+                break;
+              }
+              // Also grab IG from linked site
+              if (!result.instagram) {
+                const ig = extractInstagram(linkedHtml);
+                if (ig) {
+                  result.instagram = ig.url;
+                  result.instagramHandle = ig.handle;
+                  result.instagramSource = "linked_site";
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // ── STEP 2: Apollo for email if still not found ───────────────────────────
+    if (!result.email && process.env.APOLLO_API_KEY) {
+      try {
+        const domain = website
+          ? new URL(website).hostname.replace("www.", "")
+          : null;
+
+        const apolloRes = await fetch("https://api.apollo.io/v1/people/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+          body: JSON.stringify({
+            api_key: process.env.APOLLO_API_KEY,
+            q_organization_name: name,
+            organization_domains: domain && !isLinkInBio(website) ? [domain] : [],
+            person_titles: ["owner", "founder", "manager", "operator"],
+            per_page: 1,
+          }),
+        });
+
+        const apolloData = await apolloRes.json();
+        const person = apolloData?.people?.[0];
+        if (person?.email) {
+          result.email = person.email;
+          result.emailSource = "apollo";
+          result.ownerName = `${person.first_name || ""} ${person.last_name || ""}`.trim() || null;
+        }
+      } catch {}
+    }
+
+    // ── STEP 3: SerpAPI for Instagram if not found ───────────────────────────
+    if (!result.instagram && process.env.SERPAPI_KEY) {
+      try {
+        const params = new URLSearchParams({
+          engine: "google",
+          q: `"${name}" ${city} instagram`,
+          num: "5",
+          api_key: process.env.SERPAPI_KEY,
+        });
+
+        const serpRes = await fetch(`https://serpapi.com/search?${params}`);
+        const serpData = await serpRes.json();
+
+        for (const r of (serpData.organic_results || [])) {
+          const url = r.link || "";
+          if (url.includes("instagram.com/")) {
+            const igMatch = url.match(/instagram\.com\/([a-zA-Z0-9_.]{2,30})/);
+            if (igMatch && !["p","explore","reel","stories","tv"].includes(igMatch[1])) {
+              result.instagram = `https://www.instagram.com/${igMatch[1]}/`;
+              result.instagramHandle = `@${igMatch[1]}`;
+              result.instagramSource = "google_search";
+              break;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    result.enriched = !!(result.email || result.instagram);
+    return Response.json(result);
+
+  } catch (err) {
+    return Response.json({ error: err.message, enriched: false }, { status: 500 });
+  }
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\gmail\route.js
+// src/app/api/gmail/route.js
+// Fetches real unread emails from trogers@rogers-websolutions.com
+
+import { google } from "googleapis";
+import { getOAuthClient, isAuthorized } from "@/lib/google";
+
+export async function GET() {
+  if (!isAuthorized()) {
+    return Response.json({
+      error: "Google not authorized. Visit /api/auth/google to connect.",
+      authorized: false,
+    }, { status: 401 });
+  }
+
+  try {
+    const auth = getOAuthClient();
+    const gmail = google.gmail({ version: "v1", auth });
+
+    // Fetch up to 10 unread messages
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      q: "is:unread",
+      maxResults: 10,
+    });
+
+    const messages = list.data.messages || [];
+
+    if (messages.length === 0) {
+      return Response.json({ emails: [], count: 0 });
+    }
+
+    // Fetch details for each message
+    const emails = await Promise.all(
+      messages.map(async ({ id }) => {
+        const msg = await gmail.users.messages.get({
+          userId: "me",
+          id,
+          format: "metadata",
+          metadataHeaders: ["From", "Subject", "Date"],
+        });
+
+        const headers = msg.data.payload?.headers || [];
+        const get = (name) =>
+          headers.find((h) => h.name === name)?.value || "";
+
+        return {
+          id,
+          from: get("From"),
+          subject: get("Subject"),
+          date: get("Date"),
+          snippet: msg.data.snippet || "",
+          threadId: msg.data.threadId,
+        };
+      })
+    );
+
+    return Response.json({ emails, count: emails.length, authorized: true });
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\gmail-send\route.js
+// src/app/api/gmail-send/route.js
+import { google } from "googleapis";
+
+function getOAuthClient() {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+  oauth2Client.setCredentials({
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+  });
+  return oauth2Client;
+}
+
+// RFC 2047 Base64 encode — handles unicode, emoji, special chars in subject
+function encodeSubject(subject) {
+  // Strip any actual newlines that could break the header
+  const clean = subject.replace(/[\r\n]+/g, " ").trim();
+  // Check if it's pure ASCII — if so, no encoding needed
+  if (/^[\x00-\x7F]*$/.test(clean)) return clean;
+  // Non-ASCII → Base64 encode per RFC 2047
+  return `=?UTF-8?B?${Buffer.from(clean).toString("base64")}?=`;
+}
+
+export async function POST(req) {
+  const auth = getOAuthClient();
+
+  // Quick auth check
+  try {
+    await auth.getAccessToken();
+  } catch {
+    return Response.json(
+      { error: "Gmail not authorized. Visit /api/auth/google to connect.", authorized: false },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const { to, subject, body } = await req.json();
+
+    if (!to || !subject || !body) {
+      return Response.json({ error: "Missing to, subject, or body" }, { status: 400 });
+    }
+
+    const gmail = google.gmail({ version: "v1", auth });
+
+    // Encode subject safely — this is the fix for the garbled unicode bug
+    const encodedSubject = encodeSubject(subject);
+
+    // Build RFC 2822 email
+    const emailLines = [
+      `From: Trafton Rogers <trogers@rogers-websolutions.com>`,
+      `To: ${to}`,
+      `Subject: ${encodedSubject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: text/plain; charset=UTF-8`,
+      `Content-Transfer-Encoding: quoted-printable`,
+      ``,
+      body,
+    ];
+
+    const email = emailLines.join("\r\n");
+    const encoded = Buffer.from(email).toString("base64url");
+
+    const result = await gmail.users.messages.send({
+      userId: "me",
+      requestBody: { raw: encoded },
+    });
+
+    return Response.json({
+      success: true,
+      messageId: result.data.id,
+      threadId: result.data.threadId,
+      // Return the decoded subject so the UI can preview exactly what was sent
+      subjectSent: subject,
+    });
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\leads\route.js
+// src/app/api/leads/route.js
+// Fetches real local businesses from Google Maps via SerpAPI
+// Shows ALL results — grades A/B/C/D, nothing hidden
+
+export async function GET(req) {
+  const { searchParams } = new URL(req.url);
+  const query    = searchParams.get("q");
+  const location = searchParams.get("location") || "Orange County, California";
+
+  if (!query) return Response.json({ error: "Missing query param" }, { status: 400 });
+  if (!process.env.SERPAPI_KEY) return Response.json({ error: "SERPAPI_KEY not set" }, { status: 500 });
+
+  try {
+    const params = new URLSearchParams({
+      engine:  "google_maps",
+      q:       `${query} ${location}`,
+      type:    "search",
+      api_key: process.env.SERPAPI_KEY,
+    });
+
+    const res  = await fetch(`https://serpapi.com/search?${params}`);
+    const data = await res.json();
+
+    if (data.error) return Response.json({ error: data.error }, { status: 400 });
+
+    const results = data.local_results || [];
+
+    const prospects = results
+      .map(biz => {
+        const hasWebsite = !!biz.website;
+        const rating     = biz.rating  || 0;
+        const reviews    = biz.reviews || 0;
+        const website    = biz.website || null;
+
+        // Detect weak website builders — C grade even with a site
+        const weakBuilders = ["wix.com", "squarespace.com", "godaddy.com", "weebly.com",
+          "jimdo.com", "site123.com", "webflow.io", "wordpress.com", "yolasite.com"];
+        const isWeakSite = hasWebsite && weakBuilders.some(b => website?.includes(b));
+
+        let grade, gradeReason;
+
+        if (!hasWebsite && rating >= 4.0 && reviews >= 10) {
+          grade       = "A";
+          gradeReason = `${reviews} reviews, ${rating}★, no website — perfect fit`;
+        } else if (!hasWebsite && (reviews >= 5 || rating >= 3.5)) {
+          grade       = "B";
+          gradeReason = `${reviews} reviews, ${rating}★, no website — solid prospect`;
+        } else if (!hasWebsite) {
+          grade       = "B";
+          gradeReason = "No website — worth a pitch";
+        } else if (isWeakSite) {
+          grade       = "C";
+          gradeReason = `Has a DIY site (${weakBuilders.find(b => website?.includes(b))}) — redesign opportunity`;
+        } else if (hasWebsite && rating >= 4.0 && reviews >= 20) {
+          grade       = "C";
+          gradeReason = `Has website but strong reviews — care plan or future outreach`;
+        } else {
+          grade       = "D";
+          gradeReason = "Has website — lower priority";
+        }
+
+        return {
+          name:        biz.title,
+          address:     biz.address || "",
+          city:        extractCity(biz.address || ""),
+          phone:       biz.phone   || null,
+          website,
+          hasWebsite,
+          isWeakSite,
+          rating,
+          reviews,
+          category:    biz.type || biz.types?.[0] || query,
+          mapsUrl:     biz.link || `https://www.google.com/maps/search/${encodeURIComponent(biz.title + " " + (biz.address || ""))}`,
+          thumbnail:   biz.thumbnail || null,
+          grade,
+          gradeReason,
+        };
+      })
+      .sort((a, b) => {
+        const order = { A: 0, B: 1, C: 2, D: 3 };
+        if (order[a.grade] !== order[b.grade]) return order[a.grade] - order[b.grade];
+        return b.reviews - a.reviews;
+      });
+
+    return Response.json({
+      prospects,
+      total:   prospects.length,
+      aGrade:  prospects.filter(p => p.grade === "A").length,
+      bGrade:  prospects.filter(p => p.grade === "B").length,
+      cGrade:  prospects.filter(p => p.grade === "C").length,
+      dGrade:  prospects.filter(p => p.grade === "D").length,
+      noSite:  prospects.filter(p => !p.hasWebsite).length,
+      query,
+      location,
+    });
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
+
+function extractCity(address) {
+  const parts = address.split(",");
+  if (parts.length >= 2) return parts[parts.length - 2].trim();
+  return "Orange County";
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\api\pipeline\route.js
+// src/app/api/pipeline/route.js
+// Persistent pipeline storage via Upstash Redis
+// Protected by server-side PIN check — APP_PIN env var (NOT NEXT_PUBLIC_)
+
+import { pipelineLimiter } from "@/lib/rateLimit";
+
+const PIPELINE_KEY = "rws_pipeline_v1";
+
+// Server-side PIN check — APP_PIN is never exposed to the client
+function isAuthorizedRequest(req) {
+  const pin = req.headers.get("x-app-pin");
+  const serverPin = process.env.APP_PIN;
+  // If no PIN is configured, allow through (backwards compat during setup)
+  if (!serverPin) return true;
+  return pin === serverPin;
+}
+
+async function getRedis() {
+  const url   = process.env.KV_REST_API_URL   || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  const { Redis } = await import("@upstash/redis");
+  return new Redis({ url, token });
+}
+
+export async function GET(req) {
+  const rl = pipelineLimiter("pipeline-get");
+  if (!rl.allowed) {
+    return Response.json({ error: "Too many requests" }, { status: 429 });
+  }
+
+  if (!isAuthorizedRequest(req)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const redis = await getRedis();
+    if (!redis) {
+      return Response.json({ pipeline: [], persistent: false, warning: "Upstash not configured" });
+    }
+    const pipeline = await redis.get(PIPELINE_KEY) || [];
+    return Response.json({ pipeline, persistent: true });
+  } catch (err) {
+    return Response.json({ pipeline: [], persistent: false, error: err.message });
+  }
+}
+
+export async function POST(req) {
+  const rl = pipelineLimiter("pipeline-post");
+  if (!rl.allowed) {
+    return Response.json({ error: "Too many requests" }, { status: 429 });
+  }
+
+  if (!isAuthorizedRequest(req)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const { pipeline } = await req.json();
+    if (!Array.isArray(pipeline)) {
+      return Response.json({ error: "Invalid pipeline data" }, { status: 400 });
+    }
+    const redis = await getRedis();
+    if (!redis) {
+      return Response.json({ success: false, warning: "Upstash not configured" });
+    }
+    await redis.set(PIPELINE_KEY, pipeline);
+    return Response.json({ success: true, persistent: true });
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\layout.js
+// src/app/layout.js
+export const metadata = {
+  title: "RWS Command Center",
+  description: "Rogers Web Solutions — ops.rogers-websolutions.com",
+};
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body style={{ margin: 0, padding: 0, background: "#07080b" }}>
+        {children}
+      </body>
+    </html>
+  );
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\app\page.js
 "use client";
 import { useState, useEffect, useCallback } from "react";
 
@@ -97,6 +846,16 @@ async function enrichLead(lead) {
   }
 }
 
+async function fetchGmail() {
+  const res = await fetch("/api/gmail");
+  return res.json();
+}
+
+async function fetchCalendar(days = 7) {
+  const res = await fetch(`/api/calendar?days=${days}`);
+  return res.json();
+}
+
 async function fetchLeads(query) {
   const res = await fetch(`/api/leads?q=${encodeURIComponent(query)}`);
   return res.json();
@@ -138,40 +897,6 @@ async function savePipeline(pipeline) {
       body: JSON.stringify({ pipeline }),
     });
   } catch {}
-}
-
-// ─── ANALYTICS STORAGE (Redis-backed, cross-browser) ─────────────────────────
-const PIN_HEADER = () => ({ "x-app-pin": process.env.NEXT_PUBLIC_APP_PIN || "" });
-
-async function loadAnalytics() {
-  try {
-    const res = await fetch("/api/analytics", { headers: PIN_HEADER() });
-    return await res.json();
-  } catch { return { outreachLog: {}, nicheHistory: [] }; }
-}
-
-async function saveOutreachLog(outreachLog) {
-  try {
-    await fetch("/api/analytics", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...PIN_HEADER() },
-      body: JSON.stringify({ outreachLog }),
-    });
-  } catch {}
-}
-
-async function saveNicheHistory(nicheHistory) {
-  try {
-    await fetch("/api/analytics", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...PIN_HEADER() },
-      body: JSON.stringify({ nicheHistory }),
-    });
-  } catch {}
-}
-
-function getTodayKey() {
-  return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
 }
 
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
@@ -291,6 +1016,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
         const candidates  = allResults.filter(p => p.grade === "A" || p.grade === "B").slice(0, 8);
         const rest        = allResults.filter(p => p.grade !== "A" && p.grade !== "B").slice(0, 4);
 
+        // Enrich all A/B candidates
         const enrichedCandidates = await Promise.all(
           candidates.map(async p => {
             const enrichment = await enrichLead(p);
@@ -298,10 +1024,12 @@ function LoginScreen({ onEnter, onPrepReady }) {
           })
         );
 
+        // Load existing pipeline to avoid duplication
         const existingPipeline = await loadPipeline();
         const existingNames    = new Set(existingPipeline.map(l => l.name));
         const dismissed        = await loadDismissed();
 
+        // Auto-pipeline: contact found + not already in pipeline + not dismissed
         const toAdd = enrichedCandidates.filter(p =>
           !!(p.email || p.instagram) &&
           !existingNames.has(p.name) &&
@@ -311,11 +1039,10 @@ function LoginScreen({ onEnter, onPrepReady }) {
         let updatedPipeline = existingPipeline;
         if (toAdd.length > 0) {
           const newEntries = toAdd.map(p => ({
-            id:          `${Date.now()}-${Math.random()}`,
-            status:      "new",
-            notes:       "",
-            addedAt:     new Date().toISOString(), // ISO — safe for date math
-            contactedAt: null,
+            id:      `${Date.now()}-${Math.random()}`,
+            status:  "new",
+            notes:   "",
+            addedAt: new Date().toLocaleDateString(),
             ...p,
           }));
           updatedPipeline = [...existingPipeline, ...newEntries];
@@ -405,6 +1132,100 @@ function LoginScreen({ onEnter, onPrepReady }) {
   );
 }
 
+// ─── EMAIL MODULE ─────────────────────────────────────────────────────────────
+function EmailModule({ state, setState }) {
+  const { triage = "", triaging = false, authError = false, ctx = "", draft = "", drafting = false } = state;
+
+  async function pullInbox() {
+    setState(s => ({ ...s, triaging: true, triage: "", authError: false }));
+    const data = await fetchGmail();
+    if (data.authorized === false) { setState(s => ({ ...s, triaging: false, authError: true })); return; }
+    if (data.error) { setState(s => ({ ...s, triaging: false, triage: `Error: ${data.error}` })); return; }
+    if (!data.emails?.length) { setState(s => ({ ...s, triaging: false, triage: "Inbox is clear — no unread messages." })); return; }
+
+    const emailSummary = data.emails.map((e, i) => `${i + 1}. FROM: ${e.from}\nSUBJECT: ${e.subject}\nSNIPPET: ${e.snippet}`).join("\n\n");
+    const result = await ai(RWS_CTX + `\n\nTriage this real inbox. For each: is it an RWS lead? Does it need a reply? Recommended action (reply / ignore / follow-up)? FORMAT: FROM / SUBJECT / SUMMARY / ACTION`, `${data.emails.length} unread emails:\n\n${emailSummary}`);
+    setState(s => ({ ...s, triage: result, triaging: false }));
+  }
+
+  async function draftReply() {
+    if (!ctx.trim()) return;
+    setState(s => ({ ...s, drafting: true, draft: "" }));
+    const d = await ai(RWS_CTX + `\n\nDraft a reply from trogers@rogers-websolutions.com. Direct, short, human. Lead inquiries get a quick value pitch + Calendly link. Sign: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`, ctx);
+    setState(s => ({ ...s, draft: d, drafting: false }));
+  }
+
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+        <Dot color={C.green} /><span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Email</span>
+        <Pill color={C.green} sm>Gmail</Pill>
+      </div>
+      <Label>Inbox Triage</Label>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <Btn onClick={pullInbox} loading={triaging} color={C.blue} sm>Pull Inbox</Btn>
+      </div>
+      {authError
+        ? <div style={{ background: `${C.amber}10`, border: `1px solid ${C.amber}30`, borderRadius: 8, padding: "13px 15px" }}>
+            <p style={{ fontFamily: MONO, fontSize: 11, color: C.amber, margin: "0 0 8px" }}>Google not authorized.</p>
+            <a href="/api/auth/google" style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>Reconnect Gmail</a>
+          </div>
+        : <TextBox value={triage} loading={triaging} placeholder="Hit 'Pull Inbox' to fetch and triage your real Gmail." />
+      }
+      <Divider />
+      <Label>Draft Reply</Label>
+      <Field value={ctx} onChange={v => setState(s => ({ ...s, ctx: v }))} placeholder="Paste email or describe the situation" rows={3} />
+      <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+        <Btn onClick={draftReply} loading={drafting} disabled={!ctx.trim()} color={C.green}>Draft Reply</Btn>
+      </div>
+      {(drafting || draft) && (
+        <div style={{ marginTop: 12 }}>
+          <TextBox value={draft} loading={drafting} placeholder="" />
+          {draft && <div style={{ marginTop: 8 }}><CopyBtn text={draft} sm /></div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── CALENDAR MODULE ──────────────────────────────────────────────────────────
+function CalendarModule({ state, setState }) {
+  const { summary = "", loading = false, authError = false } = state;
+
+  async function pullWeek() {
+    setState(s => ({ ...s, loading: true, summary: "", authError: false }));
+    const data = await fetchCalendar(7);
+    if (data.authorized === false) { setState(s => ({ ...s, loading: false, authError: true })); return; }
+    if (data.error) { setState(s => ({ ...s, loading: false, summary: `Error: ${data.error}` })); return; }
+    if (!data.events?.length) { setState(s => ({ ...s, loading: false, summary: "Week is clear — no events on Google Calendar." })); return; }
+
+    const evtText = data.events.map(e => {
+      const start = new Date(e.start);
+      return `- ${start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} ${e.allDay ? "(all day)" : start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}: ${e.title}`;
+    }).join("\n");
+
+    const result = await ai(RWS_CTX + `\n\nReview Trafton's calendar. Flag anything during 8-5 M-F. Note evening/weekend slots for RWS calls. Clean day-by-day summary.`, `Events next 7 days:\n${evtText}`);
+    setState(s => ({ ...s, summary: result, loading: false }));
+  }
+
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+        <Dot color={C.blue} /><span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Calendar</span>
+        <Pill color={C.blue} sm>GCal</Pill>
+      </div>
+      <div style={{ marginBottom: 14 }}><Btn onClick={pullWeek} loading={loading} color={C.blue}>Pull This Week</Btn></div>
+      {authError
+        ? <div style={{ background: `${C.amber}10`, border: `1px solid ${C.amber}30`, borderRadius: 8, padding: "13px 15px" }}>
+            <p style={{ fontFamily: MONO, fontSize: 11, color: C.amber, margin: "0 0 8px" }}>Google not authorized.</p>
+            <a href="/api/auth/google" style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>Reconnect Google</a>
+          </div>
+        : <TextBox value={summary} loading={loading} placeholder="Pull your week — reads your real Google Calendar." />
+      }
+    </Card>
+  );
+}
+
 // ─── SHARED: EDIT PANEL ───────────────────────────────────────────────────────
 function EditPanel({ data, onChange, onSave, onCancel }) {
   return (
@@ -476,6 +1297,8 @@ function CopyPanel({ prospect, onSend }) {
     setGenerating(true);
     setGenError(null);
 
+    // Derive website situation from websiteType directly — don't trust hasWebsite boolean
+    // which can be stale after enrichment or manual edits
     const wType = prospect.websiteType;
     const wUrl  = prospect.website;
     const websiteCtx =
@@ -544,6 +1367,7 @@ function CopyPanel({ prospect, onSend }) {
 
       {expanded && draft && (
         <>
+          {/* IG DM */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>IG DM</Label>
@@ -560,6 +1384,7 @@ function CopyPanel({ prospect, onSend }) {
             <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
           </div>
 
+          {/* Cold Email */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Cold Email</Label>
@@ -597,7 +1422,7 @@ function CopyPanel({ prospect, onSend }) {
   );
 }
 
-// ─── LEAD CARD (Leads tab) ────────────────────────────────────────────────────
+// ─── LEAD CARD (Leads tab — triage only, no copy) ─────────────────────────────
 function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   const [prospect,  setProspect]  = useState(initialProspect);
   const [editing,   setEditing]   = useState(false);
@@ -637,7 +1462,9 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
           websiteType:     result.websiteType || d.websiteType,
         }));
       }
-    } catch (e) { console.error("Enrich failed:", e); }
+    } catch (e) {
+      console.error("Enrich failed:", e);
+    }
     setEnriching(false);
   }
 
@@ -693,7 +1520,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   );
 }
 
-// ─── PIPELINE CARD ────────────────────────────────────────────────────────────
+// ─── PIPELINE CARD (Pipeline tab — full workflow) ─────────────────────────────
 function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
   const [editing,   setEditing]   = useState(false);
   const [enriching, setEnriching] = useState(false);
@@ -755,7 +1582,9 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
           websiteType:     patch.websiteType || d.websiteType,
         }));
       }
-    } catch (e) { console.error("Enrich failed:", e); }
+    } catch (e) {
+      console.error("Enrich failed:", e);
+    }
     setEnriching(false);
   }
 
@@ -794,7 +1623,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
             {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || "Instagram"}</a>}
           </div>
           <div style={{ display: "flex", gap: 12, marginTop: 3, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Added {new Date(lead.addedAt).toLocaleDateString()}</span>
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Added {lead.addedAt}</span>
             {lead.contactedAt && <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue }}>Contacted {new Date(lead.contactedAt).toLocaleDateString()}</span>}
             {fu && <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>}
           </div>
@@ -849,10 +1678,10 @@ async function loadDismissed() {
 // ─── LEAD SCRAPER ─────────────────────────────────────────────────────────────
 function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
   const { niche = "", prospects = [], loading = false, error = "" } = state;
-  const [dismissed,      setDismissed]      = useState(new Set());
-  const [autoPipelining, setAutoPipelining] = useState(false);
-  const [autoLog,        setAutoLog]        = useState([]);
-  const [showAutoLog,    setShowAutoLog]    = useState(false);
+  const [dismissed,       setDismissed]       = useState(new Set());
+  const [autoPipelining,  setAutoPipelining]  = useState(false);
+  const [autoLog,         setAutoLog]         = useState([]);
+  const [showAutoLog,     setShowAutoLog]     = useState(false);
 
   useEffect(() => {
     loadDismissed().then(setDismissed);
@@ -863,22 +1692,23 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
     setState(s => ({ ...s, loading: true, error: "" }));
     const data = await fetchLeads(niche);
     if (data.error) { setState(s => ({ ...s, loading: false, error: data.error })); return; }
-    logNicheSearch(todayKey(), niche, data.aGrade || 0, data.bGrade || 0);
+    logNicheSearch(niche, data.aGrade || 0, data.bGrade || 0);
     const newProspects = data.prospects || [];
     setState(s => {
-      const existing      = s.prospects || [];
+      const existing = s.prospects || [];
       const existingNames = new Set(existing.map(p => p.name));
-      const merged        = [...existing, ...newProspects.filter(p => !existingNames.has(p.name))];
+      const merged = [...existing, ...newProspects.filter(p => !existingNames.has(p.name))];
       return { ...s, loading: false, prospects: merged, lastSearch: niche };
     });
 
+    // Auto-pipeline: enrich A/B leads from this search that aren't already pipelined
     const candidates = newProspects.filter(p =>
       (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)
     );
     if (candidates.length === 0) return;
 
     const currentDismissed = await loadDismissed();
-    const eligible         = candidates.filter(p => !currentDismissed.has(p.name));
+    const eligible = candidates.filter(p => !currentDismissed.has(p.name));
     if (eligible.length === 0) return;
 
     setAutoLog([`Auto-enriching ${eligible.length} Grade A/B leads from search...`]);
@@ -891,7 +1721,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
     for (const prospect of eligible) {
       log.push(`Enriching ${prospect.name}...`);
       setAutoLog([...log]);
-      const result   = await enrichLead(prospect);
+      const result  = await enrichLead(prospect);
       const enriched = { ...prospect, ...result, enriched: true };
       if (!!(enriched.email || enriched.instagram)) {
         onAdd(enriched);
@@ -910,8 +1740,11 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
   }
 
   async function autoPipeline() {
-    const visible    = prospects.filter(p => !dismissed.has(p.name) && !pipelineNames.has(p.name));
-    const candidates = visible.filter(p => p.grade === "A" || p.grade === "B");
+    const visible = prospects.filter(p => !dismissed.has(p.name) && !pipelineNames.has(p.name));
+    const candidates = visible.filter(p =>
+      (p.grade === "A" || p.grade === "B") &&
+      !pipelineNames.has(p.name)
+    );
 
     if (candidates.length === 0) {
       setAutoLog(["No Grade A or B leads available that aren't already in pipeline."]);
@@ -923,19 +1756,23 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
     setAutoLog([`Found ${candidates.length} Grade A/B candidates. Enriching...`]);
     setShowAutoLog(true);
 
-    let added = 0, skipped = 0;
+    let added = 0;
+    let skipped = 0;
     const log = [`Found ${candidates.length} Grade A/B candidates. Enriching...`];
 
     for (const prospect of candidates) {
       log.push(`Enriching ${prospect.name}...`);
       setAutoLog([...log]);
-      const result   = await enrichLead(prospect);
-      const enriched = { ...prospect, ...result, enriched: true };
 
-      if (!!(enriched.email || enriched.instagram)) {
+      const result = await enrichLead(prospect);
+      const enriched = { ...prospect, ...result, enriched: true };
+      const hasContact = !!(enriched.email || enriched.instagram);
+
+      if (hasContact) {
         onAdd(enriched);
         added++;
-        log.push(`Added: ${prospect.name} (${enriched.email ? enriched.email : enriched.instagramHandle || "IG"})`);
+        const contact = enriched.email ? enriched.email : enriched.instagramHandle || "IG";
+        log.push(`Added: ${prospect.name} (${contact})`);
       } else {
         skipped++;
         log.push(`Skipped: ${prospect.name} — no email or IG found`);
@@ -954,19 +1791,24 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
     setState(s => ({ ...s, prospects: s.prospects.filter(p => p.name !== name) }));
   }
 
-  const visible  = prospects.filter(p => !dismissed.has(p.name) && !pipelineNames.has(p.name));
-  const aGrade   = visible.filter(p => p.grade === "A");
-  const bGrade   = visible.filter(p => p.grade === "B");
-  const cGrade   = visible.filter(p => p.grade === "C");
-  const dGrade   = visible.filter(p => p.grade === "D");
-  const noSite   = visible.filter(p => !p.hasWebsite);
-  const autoCandidates = visible.filter(p => (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)).length;
+  // ── THE FIX: filter out dismissed AND already-pipelined leads ──
+  const visible = prospects.filter(p => !dismissed.has(p.name) && !pipelineNames.has(p.name));
+
+  const aGrade  = visible.filter(p => p.grade === "A");
+  const bGrade  = visible.filter(p => p.grade === "B");
+  const cGrade  = visible.filter(p => p.grade === "C");
+  const dGrade  = visible.filter(p => p.grade === "D");
+  const noSite  = visible.filter(p => !p.hasWebsite);
+
+  const autoCandidates = visible.filter(p =>
+    (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)
+  ).length;
 
   const gradeGroups = [
-    { grade: "A", label: "Grade A — Perfect Fit",          color: C.green, items: aGrade },
-    { grade: "B", label: "Grade B — Solid Prospect",       color: C.amber, items: bGrade },
-    { grade: "C", label: "Grade C — Redesign / Care Plan", color: C.blue,  items: cGrade },
-    { grade: "D", label: "Grade D — Has Website",          color: C.muted, items: dGrade },
+    { grade: "A", label: "Grade A — Perfect Fit",           color: C.green, items: aGrade },
+    { grade: "B", label: "Grade B — Solid Prospect",        color: C.amber, items: bGrade },
+    { grade: "C", label: "Grade C — Redesign / Care Plan",  color: C.blue,  items: cGrade },
+    { grade: "D", label: "Grade D — Has Website",           color: C.muted, items: dGrade },
   ].filter(g => g.items.length > 0);
 
   return (
@@ -988,7 +1830,12 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
               Clear all results
             </button>
             {autoCandidates > 0 && (
-              <Btn onClick={autoPipeline} loading={autoPipelining} color={C.green} sm>
+              <Btn
+                onClick={autoPipeline}
+                loading={autoPipelining}
+                color={C.green}
+                sm
+              >
                 Auto-enrich &amp; Pipeline ({autoCandidates} A/B leads)
               </Btn>
             )}
@@ -997,6 +1844,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
         {error && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "10px 0 0" }}>Error: {error}</p>}
       </Card>
 
+      {/* Auto-pipeline log */}
       {showAutoLog && autoLog.length > 0 && (
         <Card style={{ padding: "14px 18px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -1017,7 +1865,9 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {autoPipelining && i === autoLog.length - 1 && !isDone
                     ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>→</span>
-                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>{isAdded ? "✓" : isSkipped ? "—" : isDone ? "●" : "·"}</span>
+                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>
+                        {isAdded ? "✓" : isSkipped ? "—" : isDone ? "●" : "·"}
+                      </span>
                   }
                   <span style={{ fontFamily: MONO, fontSize: 11, color }}>{line}</span>
                 </div>
@@ -1062,6 +1912,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames, pipeline }) {
       {!loading && visible.length === 0 && prospects.length > 0 && (
         <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>All results dismissed or already in pipeline — search a new niche or clear results.</p></Card>
       )}
+
       {!loading && prospects.length === 0 && niche && !error && (
         <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No results yet — hit Search to pull real businesses from Google Maps.</p></Card>
       )}
@@ -1149,95 +2000,74 @@ function OutreachModule({ state, setState, pipeline }) {
 }
 
 // ─── FOLLOW-UP HELPERS ────────────────────────────────────────────────────────
-function daysSince(isoStr) {
-  if (!isoStr) return null;
-  const ts = Date.parse(isoStr);
-  if (isNaN(ts)) return null; // guard against legacy locale strings
-  return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const diff = Date.now() - new Date(dateStr).getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
 function followUpStatus(lead) {
-  // Only fire for leads that were explicitly contacted
   if (!["contacted", "followup"].includes(lead.status)) return null;
-  // Require contactedAt — never fall back to addedAt to avoid false urgency
-  if (!lead.contactedAt) return null;
-  const days = daysSince(lead.contactedAt);
+  const days = daysSince(lead.contactedAt || lead.addedAt);
   if (days === null) return null;
-  if (lead.status === "contacted" && days >= 4) return { label: `${days}d — Follow-up due`,    color: C.amber, urgent: true  };
-  if (lead.status === "followup"  && days >= 4) return { label: `${days}d — Second bump due`,  color: C.red,   urgent: true  };
-  if (lead.status === "contacted" && days >= 2) return { label: `${days}d — Sent`,             color: C.blue,  urgent: false };
+  if (lead.status === "contacted" && days >= 4)  return { label: `${days}d — Follow-up due`, color: C.amber, urgent: true };
+  if (lead.status === "followup"  && days >= 4)  return { label: `${days}d — Second bump due`, color: C.red, urgent: true };
+  if (lead.status === "contacted" && days >= 2)  return { label: `${days}d — Sent`, color: C.blue, urgent: false };
   return { label: `${days}d since contact`, color: C.muted, urgent: false };
 }
 
-// ─── ANALYTICS HELPERS ────────────────────────────────────────────────────────
-// In-memory cache — loaded once at app start, persisted to Redis on write
-let _outreachLog  = {};
-let _nicheHistory = [];
-let _analyticsLoaded = false;
-
-function todayKey() {
+// ─── OUTREACH LOG HELPERS ─────────────────────────────────────────────────────
+function getTodayKey() {
   return new Date().toLocaleDateString("en-CA");
 }
 
-async function ensureAnalyticsLoaded() {
-  if (_analyticsLoaded) return;
-  const data       = await loadAnalytics();
-  _outreachLog     = data.outreachLog  || {};
-  _nicheHistory    = data.nicheHistory || [];
-  _analyticsLoaded = true;
+function getOutreachLog() {
+  try { return JSON.parse(localStorage.getItem("rws_outreach_log") || "{}"); } catch { return {}; }
 }
 
 function logOutreach(type) {
-  const key = todayKey();
-  if (!_outreachLog[key]) _outreachLog[key] = { dms: 0, emails: 0 };
-  _outreachLog[key][type]++;
-  // Keep last 30 days only
-  const keys    = Object.keys(_outreachLog).sort().slice(-30);
+  const log = getOutreachLog();
+  const key = getTodayKey();
+  if (!log[key]) log[key] = { dms: 0, emails: 0 };
+  log[key][type]++;
+  const keys = Object.keys(log).sort().slice(-30);
   const trimmed = {};
-  keys.forEach(k => { trimmed[k] = _outreachLog[k]; });
-  _outreachLog = trimmed;
-  saveOutreachLog(_outreachLog);
-}
-
-function logNicheSearch(dateKey, query, aCount, bCount) {
-  _nicheHistory.push({ query, date: dateKey, aCount, bCount, total: aCount + bCount });
-  _nicheHistory = _nicheHistory.slice(-200);
-  saveNicheHistory(_nicheHistory);
+  keys.forEach(k => { trimmed[k] = log[k]; });
+  localStorage.setItem("rws_outreach_log", JSON.stringify(trimmed));
 }
 
 function getWeekLog() {
+  const log = getOutreachLog();
   let dms = 0, emails = 0;
   for (let i = 0; i < 7; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const key = d.toLocaleDateString("en-CA");
-    if (_outreachLog[key]) { dms += _outreachLog[key].dms || 0; emails += _outreachLog[key].emails || 0; }
+    if (log[key]) { dms += log[key].dms || 0; emails += log[key].emails || 0; }
   }
-  const today = _outreachLog[todayKey()] || { dms: 0, emails: 0 };
-  return { dms, emails, today };
+  return { dms, emails, today: log[getTodayKey()] || { dms: 0, emails: 0 } };
+}
+
+// ─── NICHE HISTORY HELPERS ────────────────────────────────────────────────────
+function logNicheSearch(query, aCount, bCount) {
+  try {
+    const key  = "rws_niche_history";
+    const hist = JSON.parse(localStorage.getItem(key) || "[]");
+    hist.push({ query, date: getTodayKey(), aCount, bCount, total: aCount + bCount });
+    localStorage.setItem(key, JSON.stringify(hist.slice(-200)));
+  } catch {}
+}
+
+function getNicheHistory() {
+  try { return JSON.parse(localStorage.getItem("rws_niche_history") || "[]"); } catch { return []; }
 }
 
 // ─── ANALYTICS MODULE ─────────────────────────────────────────────────────────
 function AnalyticsModule({ pipeline }) {
-  const [analyticsReady, setAnalyticsReady] = useState(_analyticsLoaded);
-  const [tick, setTick] = useState(0); // force re-render after load
+  const outreachLog  = getOutreachLog();
+  const nicheHistory = getNicheHistory();
 
-  useEffect(() => {
-    if (!_analyticsLoaded) {
-      ensureAnalyticsLoaded().then(() => {
-        setAnalyticsReady(true);
-        setTick(t => t + 1);
-      });
-    }
-  }, []);
-
-  if (!analyticsReady) {
-    return <Card><p style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Loading analytics...</span></p></Card>;
-  }
-
-  const outreachLog  = _outreachLog;
-  const nicheHistory = _nicheHistory;
-
+  // Pipeline funnel counts
   const statusCounts = Object.keys(STATUS).reduce((acc, s) => {
     acc[s] = pipeline.filter(l => l.status === s).length;
     return acc;
@@ -1247,6 +2077,7 @@ function AnalyticsModule({ pipeline }) {
   const warm      = pipeline.filter(l => ["warm","closed"].includes(l.status)).length;
   const closed    = pipeline.filter(l => l.status === "closed").length;
 
+  // Outreach last 30 days — build array newest-first
   const outreachDays = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date();
@@ -1259,11 +2090,12 @@ function AnalyticsModule({ pipeline }) {
       emails: outreachLog[key]?.emails || 0,
     });
   }
-  const totalDMs    = outreachDays.reduce((a, d) => a + d.dms, 0);
-  const totalEmails = outreachDays.reduce((a, d) => a + d.emails, 0);
-  const activeDays  = outreachDays.filter(d => d.dms + d.emails > 0).length;
-  const maxActivity = Math.max(...outreachDays.map(d => d.dms + d.emails), 1);
+  const totalDMs     = outreachDays.reduce((a, d) => a + d.dms, 0);
+  const totalEmails  = outreachDays.reduce((a, d) => a + d.emails, 0);
+  const activeDays   = outreachDays.filter(d => d.dms + d.emails > 0).length;
+  const maxActivity  = Math.max(...outreachDays.map(d => d.dms + d.emails), 1);
 
+  // Niche performance — aggregate by query
   const nicheMap = {};
   nicheHistory.forEach(({ query, aCount, bCount }) => {
     if (!nicheMap[query]) nicheMap[query] = { searches: 0, aTotal: 0, bTotal: 0 };
@@ -1276,6 +2108,7 @@ function AnalyticsModule({ pipeline }) {
     .sort((a, b) => b.aTotal - a.aTotal)
     .slice(0, 8);
 
+  // Grade breakdown of current pipeline
   const gradeMap = { A: 0, B: 0, C: 0, D: 0 };
   pipeline.forEach(l => { if (l.grade) gradeMap[l.grade]++; });
 
@@ -1283,6 +2116,7 @@ function AnalyticsModule({ pipeline }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
       {dataAge && (
         <div style={{ background: `${C.amber}08`, border: `1px solid ${C.amber}25`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
           <Dot color={C.amber} size={6} />
@@ -1292,11 +2126,13 @@ function AnalyticsModule({ pipeline }) {
         </div>
       )}
 
+      {/* Pipeline funnel */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
           <Dot color={C.green} />
           <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Pipeline Funnel</span>
         </div>
+
         {total === 0 ? (
           <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No pipeline leads yet.</p>
         ) : (
@@ -1304,9 +2140,9 @@ function AnalyticsModule({ pipeline }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
               {[
                 { label: "Total",     val: total,     color: C.sub,    pct: null },
-                { label: "Contacted", val: contacted,  color: C.blue,   pct: total     ? Math.round(contacted / total     * 100) : 0 },
-                { label: "Warm",      val: warm,       color: C.green,  pct: contacted ? Math.round(warm      / contacted * 100) : 0 },
-                { label: "Closed",    val: closed,     color: C.purple, pct: warm      ? Math.round(closed    / warm      * 100) : 0 },
+                { label: "Contacted", val: contacted,  color: C.blue,   pct: total ? Math.round(contacted / total * 100) : 0 },
+                { label: "Warm",      val: warm,       color: C.green,  pct: contacted ? Math.round(warm / contacted * 100) : 0 },
+                { label: "Closed",    val: closed,     color: C.purple, pct: warm ? Math.round(closed / warm * 100) : 0 },
               ].map(s => (
                 <div key={s.label} style={{ background: C.cardHi, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
                   <div style={{ fontFamily: MONO, fontSize: 22, fontWeight: 500, color: s.color, marginBottom: 3 }}>{s.val}</div>
@@ -1315,6 +2151,8 @@ function AnalyticsModule({ pipeline }) {
                 </div>
               ))}
             </div>
+
+            {/* Status bar */}
             <Label>Status Breakdown</Label>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {Object.entries(STATUS).map(([id, st]) => {
@@ -1331,6 +2169,8 @@ function AnalyticsModule({ pipeline }) {
                 );
               })}
             </div>
+
+            {/* Grade breakdown */}
             <Divider />
             <Label>Pipeline Grade Mix</Label>
             <div style={{ display: "flex", gap: 8 }}>
@@ -1345,6 +2185,7 @@ function AnalyticsModule({ pipeline }) {
         )}
       </Card>
 
+      {/* Outreach activity — last 30 days */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1353,26 +2194,34 @@ function AnalyticsModule({ pipeline }) {
             <Pill color={C.muted} sm>30 days</Pill>
           </div>
           <div style={{ display: "flex", gap: 16 }}>
-            {[{ val: totalDMs, label: "DMs", color: C.purple }, { val: totalEmails, label: "Emails", color: C.green }, { val: activeDays, label: "Active days", color: C.blue }].map(s => (
-              <div key={s.label} style={{ textAlign: "right" }}>
-                <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: s.color }}>{s.val}</div>
-                <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{s.label}</div>
-              </div>
-            ))}
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: C.purple }}>{totalDMs}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>DMs</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: C.green }}>{totalEmails}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>Emails</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 500, color: C.blue }}>{activeDays}</div>
+              <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>Active days</div>
+            </div>
           </div>
         </div>
+
         {totalDMs + totalEmails === 0 ? (
           <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No outreach logged yet. DMs and emails are tracked automatically when you copy or send from the Pipeline tab.</p>
         ) : (
           <>
+            {/* Bar chart — last 30 days */}
             <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 60, marginBottom: 8 }}>
               {outreachDays.map((d, i) => {
-                const tot = d.dms + d.emails;
-                const h   = tot ? Math.max(4, (tot / maxActivity) * 60) : 2;
+                const total = d.dms + d.emails;
+                const h = total ? Math.max(4, (total / maxActivity) * 60) : 2;
                 return (
                   <div key={i} title={`${d.label}: ${d.dms} DMs, ${d.emails} emails`}
-                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
-                    <div style={{ width: "100%", borderRadius: "2px 2px 0 0", background: tot ? `linear-gradient(to top, ${C.green}90, ${C.purple}90)` : "rgba(255,255,255,0.04)", height: h, transition: "height 0.3s ease" }} />
+                    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", cursor: "default" }}>
+                    <div style={{ width: "100%", borderRadius: "2px 2px 0 0", background: total ? `linear-gradient(to top, ${C.green}90, ${C.purple}90)` : "rgba(255,255,255,0.04)", height: h, transition: "height 0.3s ease" }} />
                   </div>
                 );
               })}
@@ -1385,11 +2234,13 @@ function AnalyticsModule({ pipeline }) {
         )}
       </Card>
 
+      {/* Niche performance */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
           <Dot color={C.amber} />
           <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Niche Performance</span>
         </div>
+
         {nicheRows.length === 0 ? (
           <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No searches logged yet. Niche data accumulates as you search in the Leads tab.</p>
         ) : (
@@ -1402,39 +2253,40 @@ function AnalyticsModule({ pipeline }) {
             {nicheRows.map((row, i) => (
               <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
                 <span style={{ fontFamily: MONO, fontSize: 11, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.query}</span>
-                <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub,   textAlign: "right" }}>{row.searches}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textAlign: "right" }}>{row.searches}</span>
                 <span style={{ fontFamily: MONO, fontSize: 11, color: C.green, textAlign: "right" }}>{row.aTotal}</span>
                 <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, textAlign: "right" }}>{row.bTotal}</span>
-                <span style={{ fontFamily: MONO, fontSize: 11, color: C.blue,  textAlign: "right" }}>{row.avgA}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textAlign: "right" }}>{row.avgA}</span>
               </div>
             ))}
           </div>
         )}
       </Card>
+
     </div>
   );
 }
 
 // ─── PIPELINE MODULE ──────────────────────────────────────────────────────────
-function PipelineModule({ pipeline, onUpdate, onRemove }) {
+function PipelineModule({ pipeline, onUpdate, onRemove, onLogOutreach }) {
   const [filter,  setFilter]  = useState("all");
-  const [weekLog, setWeekLog] = useState({ dms: 0, emails: 0, today: { dms: 0, emails: 0 } });
-
-  useEffect(() => {
-    ensureAnalyticsLoaded().then(() => setWeekLog(getWeekLog()));
-  }, []);
+  const [weekLog, setWeekLog] = useState(() => getWeekLog());
 
   const active    = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
   const closed    = pipeline.filter(l => l.status === "closed").length;
   const contacted = pipeline.filter(l => l.status !== "new").length;
 
-  const followUps = pipeline.filter(l => followUpStatus(l)?.urgent);
-  const visible   = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
+  const followUps = pipeline.filter(l => {
+    const fu = followUpStatus(l);
+    return fu?.urgent;
+  });
+
+  const visible = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
 
   function handleStatusChange(id, newStatus) {
     const patch = { status: newStatus };
     if (newStatus === "contacted" || newStatus === "followup") {
-      patch.contactedAt = new Date().toISOString(); // always ISO
+      patch.contactedAt = new Date().toISOString();
     }
     onUpdate(id, patch);
   }
@@ -1451,6 +2303,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
         {[
           { label: "Total",     val: pipeline.length, color: C.sub    },
@@ -1485,8 +2338,8 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn onClick={handleLogDM}    color={C.purple} sm>+ DM Sent</Btn>
-            <Btn onClick={handleLogEmail} color={C.green}  sm>+ Email Sent</Btn>
+            <Btn onClick={handleLogDM} color={C.purple} sm>+ DM Sent</Btn>
+            <Btn onClick={handleLogEmail} color={C.green} sm>+ Email Sent</Btn>
           </div>
         </div>
       </Card>
@@ -1537,7 +2390,13 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
           ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
           : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {visible.map(l => (
-                <PipelineCard key={l.id} lead={l} onUpdate={onUpdate} onRemove={onRemove} onStatusChange={handleStatusChange} />
+                <PipelineCard
+                  key={l.id}
+                  lead={l}
+                  onUpdate={onUpdate}
+                  onRemove={onRemove}
+                  onStatusChange={handleStatusChange}
+                />
               ))}
             </div>
       }
@@ -1547,19 +2406,22 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
 
 // ─── COMMAND CENTER ────────────────────────────────────────────────────────────
 function CommandCenter({ prepData }) {
-  const [tab,           setTab]           = useState("leads");
+  const [tab, setTab]               = useState("leads");
   const [pipelineLoaded, setPipelineLoaded] = useState(false);
+  const [emailState,    setEmailState]    = useState({});
+  const [calendarState, setCalendarState] = useState({});
   const [leadsState,    setLeadsState]    = useState({
-    niche:     prepData?.niche     || "",
+    niche:     prepData?.niche || "",
     prospects: prepData?.prospects || [],
     loading:   false,
     error:     "",
   });
   const [outreachState, setOutreachState] = useState({ type: "cold" });
-  const [pipeline,      setPipelineRaw]  = useState([]);
+  const [pipeline, setPipelineRaw] = useState([]);
 
   useEffect(() => {
     if (prepData?.pipeline?.length > 0) {
+      // Login prep already enriched, filtered, and saved to Redis — use it directly
       setPipelineRaw(prepData.pipeline);
       setPipelineLoaded(true);
     } else {
@@ -1568,8 +2430,6 @@ function CommandCenter({ prepData }) {
         setPipelineLoaded(true);
       });
     }
-    // Pre-load analytics cache so outreach log is ready
-    ensureAnalyticsLoaded();
   }, []);
 
   useEffect(() => {
@@ -1581,11 +2441,10 @@ function CommandCenter({ prepData }) {
   function addToPipeline(prospect) {
     if (pipelineNames.has(prospect.name)) return;
     setPipelineRaw(p => [...p, {
-      id:          `${Date.now()}-${Math.random()}`,
-      status:      prospect.status || "new",
-      notes:       "",
-      addedAt:     new Date().toISOString(),
-      contactedAt: null,
+      id: `${Date.now()}-${Math.random()}`,
+      status: prospect.status || "new",
+      notes: "",
+      addedAt: new Date().toLocaleDateString(),
       ...prospect,
     }]);
   }
@@ -1603,6 +2462,8 @@ function CommandCenter({ prepData }) {
   const followUpDue    = pipeline.filter(l => followUpStatus(l)?.urgent).length;
 
   const tabs = [
+    { id: "email",     label: "Email",     dot: C.green  },
+    { id: "calendar",  label: "Calendar",  dot: C.blue   },
     { id: "leads",     label: "Leads",     dot: C.amber  },
     { id: "outreach",  label: "Outreach",  dot: C.purple },
     { id: "pipeline",  label: "Pipeline",  dot: followUpDue > 0 ? C.red : C.green, badge: followUpDue > 0 ? `${followUpDue} due` : (activePipeline || null) },
@@ -1619,7 +2480,7 @@ function CommandCenter({ prepData }) {
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>· ops.rogers-websolutions.com</span>
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            {[{ c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
+            {[{ c: C.green, l: "Gmail" }, { c: C.blue, l: "GCal" }, { c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
               <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <Dot color={s.c} size={5} />
                 <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{s.l}</span>
@@ -1643,9 +2504,11 @@ function CommandCenter({ prepData }) {
       </div>
 
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 24px" }}>
-        <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState}    onAdd={addToPipeline} pipelineNames={pipelineNames} pipeline={pipeline} /></div>
+        <div style={{ display: tab === "email"     ? "block" : "none" }}><EmailModule    state={emailState}    setState={setEmailState} /></div>
+        <div style={{ display: tab === "calendar"  ? "block" : "none" }}><CalendarModule state={calendarState} setState={setCalendarState} /></div>
+        <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState} onAdd={addToPipeline} pipelineNames={pipelineNames} pipeline={pipeline} /></div>
         <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
-        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead}       onRemove={removeLead} /></div>
+        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline} onUpdate={updateLead} onRemove={removeLead} /></div>
         <div style={{ display: tab === "analytics" ? "block" : "none" }}><AnalyticsModule pipeline={pipeline} /></div>
       </div>
 
@@ -1669,3 +2532,68 @@ export default function Page() {
   if (!entered)  return <LoginScreen onEnter={() => setEntered(true)} onPrepReady={setPrepData} />;
   return <CommandCenter prepData={prepData} />;
 }
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\lib\google.js
+// src/lib/google.js
+// Shared Google OAuth2 client used by all API routes
+
+import { google } from "googleapis";
+
+export function getOAuthClient() {
+  const client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI // e.g. https://ops.rogers-websolutions.com/api/auth/callback
+  );
+
+  // After first OAuth flow, GOOGLE_REFRESH_TOKEN is set in env
+  if (process.env.GOOGLE_REFRESH_TOKEN) {
+    client.setCredentials({
+      refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    });
+  }
+
+  return client;
+}
+
+export function isAuthorized() {
+  return !!process.env.GOOGLE_REFRESH_TOKEN;
+}
+// FILE: C:\Users\TraftonRoger_aje\Documents\rws-ops-private\src\lib\rateLimit.js
+// src/lib/rateLimit.js
+// Simple in-memory rate limiter for Next.js API routes
+// Resets on server restart — sufficient for a single-user private tool
+
+const store = new Map();
+
+export function rateLimit({ windowMs = 60000, max = 20 } = {}) {
+  return function check(identifier = "global") {
+    const now = Date.now();
+    const key = identifier;
+
+    if (!store.has(key)) {
+      store.set(key, { count: 1, resetAt: now + windowMs });
+      return { allowed: true };
+    }
+
+    const entry = store.get(key);
+
+    // Reset window if expired
+    if (now > entry.resetAt) {
+      store.set(key, { count: 1, resetAt: now + windowMs });
+      return { allowed: true };
+    }
+
+    if (entry.count >= max) {
+      return { allowed: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) };
+    }
+
+    entry.count++;
+    return { allowed: true };
+  };
+}
+
+// Pre-built limiters for each route
+export const chatLimiter    = rateLimit({ max: 60, windowMs: 60000 });
+export const enrichLimiter  = rateLimit({ max: 30, windowMs: 60000 });
+export const gmailLimiter   = rateLimit({ max: 10, windowMs: 60000 });
+export const pipelineLimiter = rateLimit({ max: 60, windowMs: 60000 });
