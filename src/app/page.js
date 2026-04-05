@@ -85,7 +85,7 @@ const NICHES = [
   "painters Orange County",
 ];
 
-// â”€â”€â”€ API HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- API HELPERS --------------------------------------------------------------
 async function ai(system, user, maxTokens = 1000) {
   try {
     const res = await fetch("/api/chat", {
@@ -166,7 +166,7 @@ async function saveClients(clients) {
   } catch {}
 }
 
-// â”€â”€â”€ ANALYTICS STORAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- ANALYTICS STORAGE --------------------------------------------------------
 async function loadAnalytics() {
   try {
     const res = await fetch("/api/analytics", { headers: PIN_HEADER() });
@@ -276,7 +276,7 @@ function getWeekLog() {
   return { dms, emails, today: _outreachLog[todayKey()] || { dms: 0, emails: 0 } };
 }
 
-// â”€â”€â”€ SHARED UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- SHARED UI ----------------------------------------------------------------
 function Pill({ color, children, sm }) {
   return (
     <span style={{ fontFamily: MONO, fontSize: sm ? 9 : 10, letterSpacing: "0.12em", textTransform: "uppercase", padding: sm ? "2px 7px" : "3px 9px", borderRadius: 20, background: `${color}14`, color, border: `1px solid ${color}28`, whiteSpace: "nowrap" }}>
@@ -334,7 +334,7 @@ function CopyBtn({ text, label = "Copy", sm, onCopy }) {
   return <Btn onClick={copy} color={copied ? C.green : C.muted} sm={sm}>{copied ? "Copied" : label}</Btn>;
 }
 
-// â”€â”€â”€ PIN GATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- PIN GATE -----------------------------------------------------------------
 function PinGate({ onUnlock }) {
   const [pin, setPin]     = useState("");
   const [error, setError] = useState(false);
@@ -347,7 +347,7 @@ function PinGate({ onUnlock }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Azeret+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.22em", textTransform: "uppercase", margin: "0 0 16px" }}>RWS Â· Anaheim</p>
+        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.22em", textTransform: "uppercase", margin: "0 0 16px" }}>RWS  Anaheim</p>
         <h1 style={{ fontFamily: SERIF, fontSize: 32, color: C.white, margin: "0 0 32px" }}>Command Center</h1>
         <input type="password" value={pin} onChange={e => setPin(e.target.value)} onKeyDown={e => e.key === "Enter" && check()} placeholder="PIN" maxLength={8}
           style={{ display: "block", width: 180, margin: "0 auto 12px", background: error ? "rgba(239,83,80,0.08)" : "rgba(0,0,0,0.4)", border: `1px solid ${error ? C.red : C.border2}`, borderRadius: 8, padding: "12px 16px", textAlign: "center", fontFamily: MONO, fontSize: 20, color: C.text, outline: "none", letterSpacing: "0.3em", transition: "all 0.2s" }} />
@@ -359,7 +359,7 @@ function PinGate({ onUnlock }) {
   );
 }
 
-// â”€â”€â”€ LOGIN SCREEN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- LOGIN SCREEN -------------------------------------------------------------
 function LoginScreen({ onEnter, onPrepReady }) {
   const [brief,      setBrief]      = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -443,7 +443,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", backgroundImage: `radial-gradient(ellipse 55% 45% at 50% -5%, rgba(0,230,118,0.06) 0%, transparent 60%)` }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,500&family=Azeret+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <div style={{ textAlign: "center", marginBottom: 36, animation: "fadeUp 0.4s ease both", opacity: 0 }}>
-        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.22em", textTransform: "uppercase", margin: "0 0 10px" }}>Rogers Web Solutions Â· Anaheim, CA</p>
+        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.22em", textTransform: "uppercase", margin: "0 0 10px" }}>Rogers Web Solutions  Anaheim, CA</p>
         <h1 style={{ fontFamily: SERIF, fontSize: "clamp(30px,5vw,46px)", fontWeight: 700, color: C.white, margin: "0 0 6px" }}>{greet}, Trafton.</h1>
         <p style={{ fontFamily: BODY, fontSize: 14, color: C.sub, margin: 0 }}>{dayStr}</p>
       </div>
@@ -459,7 +459,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
             : <>
                 <p style={{ fontFamily: BODY, fontSize: 13, lineHeight: 1.75, color: C.sub, margin: "0 0 12px" }}>{brief?.synopsis}</p>
                 {brief?.focus && <div style={{ padding: "9px 13px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20` }}>
-                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.green, letterSpacing: "0.1em" }}>FOCUS Â· </span>
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.green, letterSpacing: "0.1em" }}>FOCUS  </span>
                   <span style={{ fontFamily: BODY, fontSize: 12, color: C.text }}>{brief.focus}</span>
                 </div>}
               </>
@@ -536,7 +536,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
   );
 }
 
-// â”€â”€â”€ SHARED: EDIT PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- SHARED: EDIT PANEL -------------------------------------------------------
 function EditPanel({ data, onChange, onSave, onCancel }) {
   return (
     <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", background: "rgba(171,71,188,0.04)" }}>
@@ -586,7 +586,7 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
   );
 }
 
-// â”€â”€â”€ SHARED: COPY PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- SHARED: COPY PANEL -------------------------------------------------------
 // copyType: "cold" | "followup" | "secondbump"
 // copyType from banner cards controls generation. null = cold (PipelineCard default).
 function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) {
@@ -642,7 +642,7 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
       const raw = await ai(
         RWS_CTX + `\n\n${typeInstructions} Return ONLY valid JSON, no backticks:
 {"dm":"${dmLength}. Casual Instagram DM. ${type === "cold" ? "Reference real rating and review count. Be precise about web presence." : "Do NOT re-introduce yourself or repeat the cold pitch."} Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"${type !== "cold" ? "Subject that makes clear this is a follow-up, not a first contact" : "Subject using their real data points"}","emailBody":"${emailLabel} email. ${type === "secondbump" ? "Very short — 2-3 paragraphs max." : "3-4 short paragraphs."} Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
-        `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}★ | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
+        `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}* | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
       );
       if (raw.startsWith("Error:")) { setGenError(raw); }
       else {
@@ -724,7 +724,7 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
   );
 }
 
-// â”€â”€â”€ LEAD CARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- LEAD CARD ----------------------------------------------------------------
 function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   const [prospect,  setProspect]  = useState(initialProspect);
   const [editing,   setEditing]   = useState(false);
@@ -769,7 +769,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
           </div>
           <p style={{ fontFamily: MONO, fontSize: 11, color: C.muted, margin: "0 0 4px" }}>{prospect.address}</p>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 3 }}>
-            {prospect.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>â˜… {prospect.rating} ({prospect.reviews})</span>}
+            {prospect.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>* {prospect.rating} ({prospect.reviews})</span>}
             {prospect.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{prospect.phone}</span>}
             <a href={prospect.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>
             {prospect.website && <a href={prospect.website} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textDecoration: "none" }}>{prospect.websiteType === "link_in_bio" ? "Link-in-bio" : "Website"}</a>}
@@ -791,7 +791,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   );
 }
 
-// â”€â”€â”€ PIPELINE CARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- PIPELINE CARD ------------------------------------------------------------
 function PipelineCard({ lead, onUpdate, onRemove, onStatusChange, compact = false }) {
   const [editing,   setEditing]   = useState(false);
   const [enriching, setEnriching] = useState(false);
@@ -840,7 +840,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange, compact = fals
             {lead.manuallyEdited && <Pill color={C.purple} sm>Edited</Pill>}
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 3 }}>
-            {lead.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>â˜… {lead.rating} ({lead.reviews} reviews)</span>}
+            {lead.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>* {lead.rating} ({lead.reviews} reviews)</span>}
             {lead.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{lead.phone}</span>}
             {lead.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{lead.email}</span>}
             {lead.mapsUrl && <a href={lead.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>}
@@ -889,7 +889,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange, compact = fals
   );
 }
 
-// ─── ADD LEAD MODAL ──────────────────────────────────────────────────────────
+// --- ADD LEAD MODAL ----------------------------------------------------------
 function AddLeadModal({ onAdd, onClose }) {
   const BLANK = { name: "", city: "", category: "", phone: "", email: "", instagramHandle: "", website: "", grade: "", notes: "" };
   const [form, setForm] = useState(BLANK);
@@ -989,7 +989,7 @@ async function loadDismissed() {
   } catch { return new Set(); }
 }
 
-// â”€â”€â”€ LEAD SCRAPER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- LEAD SCRAPER -------------------------------------------------------------
 function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   const { niche = "", prospects = [], loading = false, error = "" } = state;
   const [dismissed,      setDismissed]      = useState(new Set());
@@ -1075,7 +1075,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
           <Dot color={C.amber} />
           <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Lead Scraper</span>
-          <Pill color={C.blue} sm>Google Maps Â· Real Data</Pill>
+          <Pill color={C.blue} sm>Google Maps  Real Data</Pill>
           {prospects.length > 0 && <Pill color={C.green} sm>{prospects.length} loaded</Pill>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -1104,8 +1104,8 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {autoPipelining && i === autoLog.length - 1 && !isDone
-                    ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>â†’</span>
-                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>{isAdded ? "âœ“" : isSkipped ? "â€”" : isDone ? "â—" : "Â·"}</span>}
+                    ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>-></span>
+                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>{isAdded ? "+" : isSkipped ? "-" : isDone ? "-" : ""}</span>}
                   <span style={{ fontFamily: MONO, fontSize: 11, color }}>{line}</span>
                 </div>
               );
@@ -1142,7 +1142,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   );
 }
 
-// â”€â”€â”€ OUTREACH MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- OUTREACH MODULE ----------------------------------------------------------
 function OutreachModule({ state, setState, pipeline }) {
   const { selected = null, type = "cold", output = "", loading = false, custom = "" } = state;
   const types = [
@@ -1210,7 +1210,7 @@ function OutreachModule({ state, setState, pipeline }) {
   );
 }
 
-// â”€â”€â”€ FOLLOW-UP HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- FOLLOW-UP HELPERS --------------------------------------------------------
 function daysSince(isoStr) {
   if (!isoStr) return null;
   const ts = Date.parse(isoStr);
@@ -1229,7 +1229,7 @@ function followUpStatus(lead) {
   return { label: `${days}d since contact`, color: C.muted, urgent: false };
 }
 
-// â”€â”€â”€ ANALYTICS MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- ANALYTICS MODULE ---------------------------------------------------------
 function AnalyticsModule({ pipeline }) {
   const [ready, setReady] = useState(_analyticsLoaded);
   const [, setTick]       = useState(0);
@@ -1372,7 +1372,7 @@ function AnalyticsModule({ pipeline }) {
   );
 }
 
-// â”€â”€â”€ PIPELINE MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- PIPELINE MODULE ----------------------------------------------------------
 function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
   const [filter,           setFilter]           = useState("all");
   const [weekLog,          setWeekLog]          = useState({ dms: 0, emails: 0, today: { dms: 0, emails: 0 } });
@@ -1465,7 +1465,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
                             {Object.entries(STATUS).filter(([id]) => !col.ids.includes(id)).slice(0, 3).map(([id, st]) => (
                               <button key={id} onClick={() => handleStatusChange(l.id, id)}
                                 style={{ fontFamily: MONO, fontSize: 9, padding: "2px 7px", borderRadius: 20, cursor: "pointer", background: "transparent", border: `1px solid ${C.border}`, color: C.muted }}>
-                                → {st.label}
+                                -> {st.label}
                               </button>
                             ))}
                           </div>
@@ -1575,7 +1575,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
             {SORT_OPTIONS.map(opt => (
               <button key={opt.id} onClick={() => toggleSort(opt.id)}
                 style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: sortBy === opt.id ? `${C.blue}14` : "transparent", border: `1px solid ${sortBy === opt.id ? C.blue : C.border}`, color: sortBy === opt.id ? C.blue : C.muted }}>
-                {opt.label}{sortBy === opt.id ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                {opt.label}{sortBy === opt.id ? (sortDir === "asc" ? " ^" : " v") : ""}
               </button>
             ))}
           </div>
@@ -1610,7 +1610,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
   );
 }
 
-// â”€â”€â”€ PROPOSAL MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- PROPOSAL MODULE ----------------------------------------------------------
 function ProposalModule() {
   const BLANK = { businessName: "", contactName: "", scope: [], scopeNotes: "", timeline: "1 week", carePlan: false, careRate: "200" };
   const [form,     setForm]     = useState(BLANK);
@@ -1662,7 +1662,7 @@ function ProposalModule() {
 
   function buildPlainText() {
     if (!proposal) return "";
-    const scopeList = (proposal.scopeItems || []).map(item => `  â€¢ ${item}`).join("\n");
+    const scopeList = (proposal.scopeItems || []).map(item => `  - ${item}`).join("\n");
     return `Subject: ${proposal.subject}
 
 ${proposal.greeting}
@@ -1773,7 +1773,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
 
           <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
             <div style={{ padding: "10px 14px", background: `${C.teal}08`, borderRadius: 8, border: `1px solid ${C.teal}20`, marginBottom: 16 }}>
-              <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, letterSpacing: "0.1em" }}>SUBJECT Â· </span>
+              <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, letterSpacing: "0.1em" }}>SUBJECT  </span>
               <span style={{ fontFamily: MONO, fontSize: 11, color: C.text }}>{proposal.subject}</span>
             </div>
 
@@ -1792,7 +1792,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {(proposal.scopeItems || []).map((item, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, flexShrink: 0, marginTop: 2 }}>â—</span>
+                    <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, flexShrink: 0, marginTop: 2 }}>-</span>
                     <span style={{ fontFamily: BODY, fontSize: 13, color: C.sub, lineHeight: 1.6 }}>{item}</span>
                   </div>
                 ))}
@@ -1821,7 +1821,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
   );
 }
 
-// â”€â”€â”€ CLIENT TRACKER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- CLIENT TRACKER -----------------------------------------------------------
 function ClientTracker() {
   const [clients,  setClientsRaw] = useState([]);
   const [loaded,   setLoaded]     = useState(false);
@@ -2020,7 +2020,7 @@ function ClientTracker() {
   );
 }
 
-// â”€â”€â”€ COMMAND CENTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- COMMAND CENTER ------------------------------------------------------------
 function CommandCenter({ prepData }) {
   const [tab,            setTab]           = useState("leads");
   const [pipelineLoaded, setPipelineLoaded] = useState(false);
@@ -2066,7 +2066,7 @@ function CommandCenter({ prepData }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Dot color={C.green} pulse size={8} />
             <span style={{ fontFamily: MONO, fontSize: 12, color: C.text, letterSpacing: "0.04em" }}>RWS Command</span>
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Â· ops.rogers-websolutions.com</span>
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}> ops.rogers-websolutions.com</span>
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             {[{ c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
@@ -2110,7 +2110,7 @@ function CommandCenter({ prepData }) {
   );
 }
 
-// â”€â”€â”€ ROOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- ROOT ----------------------------------------------------------------------
 export default function Page() {
   const [unlocked, setUnlocked] = useState(false);
   const [entered,  setEntered]  = useState(false);
