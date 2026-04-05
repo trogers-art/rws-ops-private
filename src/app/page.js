@@ -1104,7 +1104,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {autoPipelining && i === autoLog.length - 1 && !isDone
-                    ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>-></span>
+                    ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>{'->'}</span>
                     : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>{isAdded ? "+" : isSkipped ? "-" : isDone ? "-" : ""}</span>}
                   <span style={{ fontFamily: MONO, fontSize: 11, color }}>{line}</span>
                 </div>
@@ -1465,7 +1465,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
                             {Object.entries(STATUS).filter(([id]) => !col.ids.includes(id)).slice(0, 3).map(([id, st]) => (
                               <button key={id} onClick={() => handleStatusChange(l.id, id)}
                                 style={{ fontFamily: MONO, fontSize: 9, padding: "2px 7px", borderRadius: 20, cursor: "pointer", background: "transparent", border: `1px solid ${C.border}`, color: C.muted }}>
-                                -> {st.label}
+                               {'-> '}{st.label}
                               </button>
                             ))}
                           </div>
