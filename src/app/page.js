@@ -34,7 +34,7 @@ const STATUS = {
 
 const GRADE_COLOR = { A: C.green, B: C.amber, C: C.blue, D: C.muted };
 
-// Tech pulse topic categories — one per day-of-week, forces variety
+// Tech pulse topic categories â€” one per day-of-week, forces variety
 const TECH_TOPICS = [
   "AI/LLM tooling, inference optimization, or agent frameworks",
   "Network observability, eBPF, or modern monitoring stacks",
@@ -50,11 +50,11 @@ const RWS_CTX = `You are the AI operations assistant for Rogers Web Solutions (R
 KEY FACTS:
 - Trafton works a full-time day job 8-5 M-F as a Senior Network Engineer in Anaheim
 - RWS builds affordable websites ($500-$1,000) with monthly care plans ($150-$300/mo)
-- Target clients: local OC small businesses — trades (HVAC, plumbing, electrical), nail techs, handymen, independent motels, Instagram-based service businesses
+- Target clients: local OC small businesses â€” trades (HVAC, plumbing, electrical), nail techs, handymen, independent motels, Instagram-based service businesses
 - Email: trogers@rogers-websolutions.com | Book a call: https://www.rogers-websolutions.com/book
 - Only available evenings and weekends
 
-TRAFTON'S VOICE — follow this exactly:
+TRAFTON'S VOICE â€” follow this exactly:
 - Direct and confident. Get to the point in the first sentence.
 - Consultative, not salesy. Point out a real problem, don't pitch a product.
 - Data-driven. Reference real ratings, review counts, missing website specifically.
@@ -64,10 +64,10 @@ TRAFTON'S VOICE — follow this exactly:
 - NEVER use em-dashes, exclamation points, or fake casual openers
 - NEVER invent data. Only use facts provided about the actual business.
 
-EMAIL SIGNATURE — always end emails with exactly this, on its own line:
+EMAIL SIGNATURE â€” always end emails with exactly this, on its own line:
 Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com
 
-DM SIGN-OFF — always end DMs with this on its own line:
+DM SIGN-OFF â€” always end DMs with this on its own line:
 Trafton @ Rogers Web Solutions`;
 
 const NICHES = [
@@ -85,7 +85,7 @@ const NICHES = [
   "painters Orange County",
 ];
 
-// ─── API HELPERS ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ API HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function ai(system, user, maxTokens = 1000) {
   try {
     const res = await fetch("/api/chat", {
@@ -166,7 +166,7 @@ async function saveClients(clients) {
   } catch {}
 }
 
-// ─── ANALYTICS STORAGE ────────────────────────────────────────────────────────
+// â”€â”€â”€ ANALYTICS STORAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadAnalytics() {
   try {
     const res = await fetch("/api/analytics", { headers: PIN_HEADER() });
@@ -276,7 +276,7 @@ function getWeekLog() {
   return { dms, emails, today: _outreachLog[todayKey()] || { dms: 0, emails: 0 } };
 }
 
-// ─── SHARED UI ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ SHARED UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Pill({ color, children, sm }) {
   return (
     <span style={{ fontFamily: MONO, fontSize: sm ? 9 : 10, letterSpacing: "0.12em", textTransform: "uppercase", padding: sm ? "2px 7px" : "3px 9px", borderRadius: 20, background: `${color}14`, color, border: `1px solid ${color}28`, whiteSpace: "nowrap" }}>
@@ -334,7 +334,7 @@ function CopyBtn({ text, label = "Copy", sm, onCopy }) {
   return <Btn onClick={copy} color={copied ? C.green : C.muted} sm={sm}>{copied ? "Copied" : label}</Btn>;
 }
 
-// ─── PIN GATE ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ PIN GATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function PinGate({ onUnlock }) {
   const [pin, setPin]     = useState("");
   const [error, setError] = useState(false);
@@ -347,7 +347,7 @@ function PinGate({ onUnlock }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Azeret+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.22em", textTransform: "uppercase", margin: "0 0 16px" }}>RWS · Anaheim</p>
+        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.22em", textTransform: "uppercase", margin: "0 0 16px" }}>RWS Â· Anaheim</p>
         <h1 style={{ fontFamily: SERIF, fontSize: 32, color: C.white, margin: "0 0 32px" }}>Command Center</h1>
         <input type="password" value={pin} onChange={e => setPin(e.target.value)} onKeyDown={e => e.key === "Enter" && check()} placeholder="PIN" maxLength={8}
           style={{ display: "block", width: 180, margin: "0 auto 12px", background: error ? "rgba(239,83,80,0.08)" : "rgba(0,0,0,0.4)", border: `1px solid ${error ? C.red : C.border2}`, borderRadius: 8, padding: "12px 16px", textAlign: "center", fontFamily: MONO, fontSize: 20, color: C.text, outline: "none", letterSpacing: "0.3em", transition: "all 0.2s" }} />
@@ -359,7 +359,7 @@ function PinGate({ onUnlock }) {
   );
 }
 
-// ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ LOGIN SCREEN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function LoginScreen({ onEnter, onPrepReady }) {
   const [brief,      setBrief]      = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -379,7 +379,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
 
       const briefP = ai(
         RWS_CTX + `\n\nGenerate a daily briefing. Return ONLY valid JSON, no backticks, no markdown:
-{"synopsis":"2-3 sentences. Mention today is ${dayStr}. Weekend means no day job constraints.","focus":"Single highest-leverage RWS task today — be specific and actionable.","tech":"2 sentences specifically about: ${techTopic}. Name actual products, tools, or companies. Make it feel like a real headline, not a textbook definition.","motivation":"One grounded punchy sentence. No quotes. Not cheesy. Not generic."}`,
+{"synopsis":"2-3 sentences. Mention today is ${dayStr}. Weekend means no day job constraints.","focus":"Single highest-leverage RWS task today â€” be specific and actionable.","tech":"2 sentences specifically about: ${techTopic}. Name actual products, tools, or companies. Make it feel like a real headline, not a textbook definition.","motivation":"One grounded punchy sentence. No quotes. Not cheesy. Not generic."}`,
         `Today: ${dayStr}. Weekend: ${isWeekend}. Hour: ${hour}. Tech topic for today: ${techTopic}.`
       ).then(raw => {
         try { setBrief(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
@@ -441,7 +441,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", backgroundImage: `radial-gradient(ellipse 55% 45% at 50% -5%, rgba(0,230,118,0.06) 0%, transparent 60%)` }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,500&family=Azeret+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <div style={{ textAlign: "center", marginBottom: 36, animation: "fadeUp 0.4s ease both", opacity: 0 }}>
-        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.22em", textTransform: "uppercase", margin: "0 0 10px" }}>Rogers Web Solutions · Anaheim, CA</p>
+        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, letterSpacing: "0.22em", textTransform: "uppercase", margin: "0 0 10px" }}>Rogers Web Solutions Â· Anaheim, CA</p>
         <h1 style={{ fontFamily: SERIF, fontSize: "clamp(30px,5vw,46px)", fontWeight: 700, color: C.white, margin: "0 0 6px" }}>{greet}, Trafton.</h1>
         <p style={{ fontFamily: BODY, fontSize: 14, color: C.sub, margin: 0 }}>{dayStr}</p>
       </div>
@@ -457,7 +457,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
             : <>
                 <p style={{ fontFamily: BODY, fontSize: 13, lineHeight: 1.75, color: C.sub, margin: "0 0 12px" }}>{brief?.synopsis}</p>
                 {brief?.focus && <div style={{ padding: "9px 13px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20` }}>
-                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.green, letterSpacing: "0.1em" }}>FOCUS · </span>
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.green, letterSpacing: "0.1em" }}>FOCUS Â· </span>
                   <span style={{ fontFamily: BODY, fontSize: 12, color: C.text }}>{brief.focus}</span>
                 </div>}
               </>
@@ -493,7 +493,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
       </div>
 
       <button onClick={onEnter} style={{ fontFamily: MONO, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", padding: "14px 44px", borderRadius: 50, cursor: "pointer", background: `${C.green}14`, border: `1px solid ${C.green}55`, color: C.green, transition: "all 0.2s", animation: "fadeUp 0.5s ease both", animationDelay: "0.5s", opacity: 0 }}>
-        {prepStatus === "done" ? "Enter — Leads Ready" : "Enter Command Center"}
+        {prepStatus === "done" ? "Enter â€” Leads Ready" : "Enter Command Center"}
       </button>
       <style>{`
         @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
@@ -506,7 +506,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
   );
 }
 
-// ─── SHARED: EDIT PANEL ───────────────────────────────────────────────────────
+// â”€â”€â”€ SHARED: EDIT PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function EditPanel({ data, onChange, onSave, onCancel }) {
   return (
     <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", background: "rgba(171,71,188,0.04)" }}>
@@ -556,8 +556,10 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
   );
 }
 
-// ─── SHARED: COPY PANEL ───────────────────────────────────────────────────────
-function CopyPanel({ prospect, onSend, defaultType = null }) {
+// â”€â”€â”€ SHARED: COPY PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// copyType: "cold" | "followup" | "secondbump"
+// copyType from banner cards controls generation. null = cold (PipelineCard default).
+function CopyPanel({ prospect, onSend, copyType = null }) {
   const [draft,      setDraft]      = useState(null);
   const [generating, setGenerating] = useState(false);
   const [genError,   setGenError]   = useState(null);
@@ -568,22 +570,20 @@ function CopyPanel({ prospect, onSend, defaultType = null }) {
 
   useEffect(() => {
     setDraft(null); setExpanded(false); setGenError(null);
-    // Auto-generate if a defaultType is provided (e.g. follow-up banner)
-    if (defaultType) generateCopy(defaultType);
   }, [prospect.name, prospect.email, prospect.instagram, prospect.websiteType, prospect.website, prospect.hasWebsite, prospect.notes]);
 
-  async function generateCopy(type = null) {
-    if (draft && !type) { setExpanded(e => !e); return; }
+  async function generateCopy() {
+    if (draft) { setExpanded(e => !e); return; }
     setGenerating(true); setGenError(null);
 
     const wType      = prospect.websiteType;
     const wUrl       = prospect.website;
     const websiteCtx =
-      wType === "link_in_bio" ? `Has a link-in-bio page (${wUrl}) — NOT a real website`
-      : wType === "weak"      ? `Has a weak DIY website (${wUrl}) — poor SEO`
+      wType === "link_in_bio" ? `Has a link-in-bio page (${wUrl}) â€” NOT a real website`
+      : wType === "weak"      ? `Has a weak DIY website (${wUrl}) â€” poor SEO`
       : wType === "real"      ? `Has a real website: ${wUrl}`
       : wUrl                  ? `Has website: ${wUrl}`
-      : "No website — completely invisible online";
+      : "No website â€” completely invisible online";
 
     const contactInfo = [
       prospect.email     ? `Email: ${prospect.email}` : null,
@@ -591,25 +591,33 @@ function CopyPanel({ prospect, onSend, defaultType = null }) {
       prospect.phone     ? `Phone: ${prospect.phone}` : null,
     ].filter(Boolean).join(" | ");
 
-    const copyType = type || "cold";
-    const typeInstructions = copyType === "followup"
-      ? `Write a follow-up IG DM and follow-up email. No response to first outreach. Brief, no pressure, specific re-pitch.`
-      : `Write a cold IG DM and cold email for this REAL business.`;
+    const type = copyType || "cold";
+
+    const typeInstructions =
+      type === "secondbump"
+        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. This is the third and final contact attempt — they have not responded to two previous messages. DM must be 1-2 sentences MAX. No pressure, no re-pitch. Just a brief check-in with the booking link. Email: 2-3 short paragraphs max.`
+        : type === "followup"
+          ? `Write a FIRST follow-up IG DM and first follow-up email. They did not respond to initial cold outreach. Brief, low pressure, slightly different angle. Do NOT re-pitch from scratch or re-introduce yourself.`
+          : `Write a cold IG DM and cold email for this REAL business.`;
+
+    const emailLabel = type === "secondbump" ? "Second follow-up" : type === "followup" ? "Follow-up" : "Cold";
+    const dmLength   = type === "secondbump" ? "1-2 sentences MAX" : "3-4 sentences";
 
     try {
       const raw = await ai(
         RWS_CTX + `\n\n${typeInstructions} Return ONLY valid JSON, no backticks:
-{"dm":"3-4 sentences. Casual Instagram DM. Reference real rating and review count. Be precise about web presence. Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"Subject using their real data points","emailBody":"${copyType === "followup" ? "Follow-up" : "Cold"} email. 3-4 short paragraphs. Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+{"dm":"${dmLength}. Casual Instagram DM. ${type === "cold" ? "Reference real rating and review count. Be precise about web presence." : "Do NOT re-introduce yourself or repeat the cold pitch."} Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"${type !== "cold" ? "Subject that makes clear this is a follow-up, not a first contact" : "Subject using their real data points"}","emailBody":"${emailLabel} email. ${type === "secondbump" ? "Very short — 2-3 paragraphs max." : "3-4 short paragraphs."} Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
         `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}★ | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
       );
       if (raw.startsWith("Error:")) { setGenError(raw); }
       else {
         try { setDraft(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
-        catch { setDraft({ dm: raw, emailSubject: `${prospect.name} — ${prospect.reviews} reviews`, emailBody: raw }); }
+        catch { setDraft({ dm: raw, emailSubject: `${prospect.name} — follow up`, emailBody: raw }); }
         setExpanded(true);
       }
     } catch (e) { setGenError(`Error: ${e.message}`); }
     setGenerating(false);
+  }    setGenerating(false);
   }
 
   async function handleSend() {
@@ -631,7 +639,7 @@ function CopyPanel({ prospect, onSend, defaultType = null }) {
       </div>
       {genError && (
         <div style={{ marginTop: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} — hit Retry</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} â€” hit Retry</span>
         </div>
       )}
       {expanded && draft && (
@@ -682,7 +690,7 @@ function CopyPanel({ prospect, onSend, defaultType = null }) {
   );
 }
 
-// ─── LEAD CARD ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ LEAD CARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   const [prospect,  setProspect]  = useState(initialProspect);
   const [editing,   setEditing]   = useState(false);
@@ -727,7 +735,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
           </div>
           <p style={{ fontFamily: MONO, fontSize: 11, color: C.muted, margin: "0 0 4px" }}>{prospect.address}</p>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 3 }}>
-            {prospect.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>★ {prospect.rating} ({prospect.reviews})</span>}
+            {prospect.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>â˜… {prospect.rating} ({prospect.reviews})</span>}
             {prospect.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{prospect.phone}</span>}
             <a href={prospect.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>
             {prospect.website && <a href={prospect.website} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textDecoration: "none" }}>{prospect.websiteType === "link_in_bio" ? "Link-in-bio" : "Website"}</a>}
@@ -749,7 +757,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
   );
 }
 
-// ─── PIPELINE CARD ────────────────────────────────────────────────────────────
+// â”€â”€â”€ PIPELINE CARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
   const [editing,   setEditing]   = useState(false);
   const [enriching, setEnriching] = useState(false);
@@ -797,7 +805,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
             {lead.manuallyEdited && <Pill color={C.purple} sm>Edited</Pill>}
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 3 }}>
-            {lead.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>★ {lead.rating} ({lead.reviews} reviews)</span>}
+            {lead.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>â˜… {lead.rating} ({lead.reviews} reviews)</span>}
             {lead.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{lead.phone}</span>}
             {lead.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{lead.email}</span>}
             {lead.mapsUrl && <a href={lead.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>}
@@ -845,7 +853,7 @@ async function loadDismissed() {
   } catch { return new Set(); }
 }
 
-// ─── LEAD SCRAPER ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ LEAD SCRAPER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   const { niche = "", prospects = [], loading = false, error = "" } = state;
   const [dismissed,      setDismissed]      = useState(new Set());
@@ -881,7 +889,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
       const result   = await enrichLead(prospect);
       const enriched = { ...prospect, ...result, enriched: true };
       if (!!(enriched.email || enriched.instagram)) { onAdd(enriched); added++; log.push(`Added: ${prospect.name}`); }
-      else { skipped++; log.push(`Skipped: ${prospect.name} — no contact`); }
+      else { skipped++; log.push(`Skipped: ${prospect.name} â€” no contact`); }
       setAutoLog([...log]);
     }
     log.push(`Done. ${added} added, ${skipped} skipped.`); setAutoLog([...log]); setAutoPipelining(false);
@@ -899,7 +907,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
       const result   = await enrichLead(prospect);
       const enriched = { ...prospect, ...result, enriched: true };
       if (!!(enriched.email || enriched.instagram)) { onAdd(enriched); added++; log.push(`Added: ${prospect.name}`); }
-      else { skipped++; log.push(`Skipped: ${prospect.name} — no contact`); }
+      else { skipped++; log.push(`Skipped: ${prospect.name} â€” no contact`); }
       setAutoLog([...log]);
     }
     log.push(`Done. ${added} added, ${skipped} skipped.`); setAutoLog([...log]); setAutoPipelining(false);
@@ -919,10 +927,10 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   const noSite   = visible.filter(p => !p.hasWebsite);
   const autoCandidates = visible.filter(p => (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)).length;
   const gradeGroups = [
-    { grade: "A", label: "Grade A — Perfect Fit",          color: C.green, items: aGrade },
-    { grade: "B", label: "Grade B — Solid Prospect",       color: C.amber, items: bGrade },
-    { grade: "C", label: "Grade C — Redesign / Care Plan", color: C.blue,  items: cGrade },
-    { grade: "D", label: "Grade D — Has Website",          color: C.muted, items: dGrade },
+    { grade: "A", label: "Grade A â€” Perfect Fit",          color: C.green, items: aGrade },
+    { grade: "B", label: "Grade B â€” Solid Prospect",       color: C.amber, items: bGrade },
+    { grade: "C", label: "Grade C â€” Redesign / Care Plan", color: C.blue,  items: cGrade },
+    { grade: "D", label: "Grade D â€” Has Website",          color: C.muted, items: dGrade },
   ].filter(g => g.items.length > 0);
 
   return (
@@ -931,7 +939,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
           <Dot color={C.amber} />
           <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Lead Scraper</span>
-          <Pill color={C.blue} sm>Google Maps · Real Data</Pill>
+          <Pill color={C.blue} sm>Google Maps Â· Real Data</Pill>
           {prospects.length > 0 && <Pill color={C.green} sm>{prospects.length} loaded</Pill>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -960,8 +968,8 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {autoPipelining && i === autoLog.length - 1 && !isDone
-                    ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>→</span>
-                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>{isAdded ? "✓" : isSkipped ? "—" : isDone ? "●" : "·"}</span>}
+                    ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>â†’</span>
+                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>{isAdded ? "âœ“" : isSkipped ? "â€”" : isDone ? "â—" : "Â·"}</span>}
                   <span style={{ fontFamily: MONO, fontSize: 11, color }}>{line}</span>
                 </div>
               );
@@ -998,7 +1006,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   );
 }
 
-// ─── OUTREACH MODULE ──────────────────────────────────────────────────────────
+// â”€â”€â”€ OUTREACH MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function OutreachModule({ state, setState, pipeline }) {
   const { selected = null, type = "cold", output = "", loading = false, custom = "" } = state;
   const types = [
@@ -1066,7 +1074,7 @@ function OutreachModule({ state, setState, pipeline }) {
   );
 }
 
-// ─── FOLLOW-UP HELPERS ────────────────────────────────────────────────────────
+// â”€â”€â”€ FOLLOW-UP HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function daysSince(isoStr) {
   if (!isoStr) return null;
   const ts = Date.parse(isoStr);
@@ -1079,13 +1087,13 @@ function followUpStatus(lead) {
   if (!lead.contactedAt) return null;
   const days = daysSince(lead.contactedAt);
   if (days === null) return null;
-  if (lead.status === "contacted" && days >= 4) return { label: `${days}d — Follow-up due`,   color: C.amber, urgent: true  };
-  if (lead.status === "followup"  && days >= 4) return { label: `${days}d — Second bump due`, color: C.red,   urgent: true  };
-  if (lead.status === "contacted" && days >= 2) return { label: `${days}d — Sent`,            color: C.blue,  urgent: false };
+  if (lead.status === "contacted" && days >= 4) return { label: `${days}d â€” Follow-up due`,   color: C.amber, urgent: true  };
+  if (lead.status === "followup"  && days >= 4) return { label: `${days}d â€” Second bump due`, color: C.red,   urgent: true  };
+  if (lead.status === "contacted" && days >= 2) return { label: `${days}d â€” Sent`,            color: C.blue,  urgent: false };
   return { label: `${days}d since contact`, color: C.muted, urgent: false };
 }
 
-// ─── ANALYTICS MODULE ─────────────────────────────────────────────────────────
+// â”€â”€â”€ ANALYTICS MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AnalyticsModule({ pipeline }) {
   const [ready, setReady] = useState(_analyticsLoaded);
   const [, setTick]       = useState(0);
@@ -1128,7 +1136,7 @@ function AnalyticsModule({ pipeline }) {
       {(pipeline.length < 3 || activeDays < 2) && (
         <div style={{ background: `${C.amber}08`, border: `1px solid ${C.amber}25`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
           <Dot color={C.amber} size={6} />
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>Early data — trends get meaningful at 30+ days and 10+ leads.</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>Early data â€” trends get meaningful at 30+ days and 10+ leads.</span>
         </div>
       )}
       <Card>
@@ -1228,7 +1236,7 @@ function AnalyticsModule({ pipeline }) {
   );
 }
 
-// ─── PIPELINE MODULE ──────────────────────────────────────────────────────────
+// â”€â”€â”€ PIPELINE MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function PipelineModule({ pipeline, onUpdate, onRemove }) {
   const [filter,  setFilter]  = useState("all");
   const [weekLog, setWeekLog] = useState({ dms: 0, emails: 0, today: { dms: 0, emails: 0 } });
@@ -1309,7 +1317,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
                       <Btn sm color={C.red}    onClick={() => handleStatusChange(l.id, "cold")}>Mark Cold</Btn>
                     </div>
                   </div>
-                  {isExpanded && <CopyPanel prospect={l} onSend={() => handleStatusChange(l.id, "followup")} defaultType="followup" />}
+                  {isExpanded && <CopyPanel prospect={l} onSend={() => handleStatusChange(l.id, "followup")} copyType={l.status === "followup" ? "secondbump" : "followup"} />}
                 </div>
               );
             })}
@@ -1327,7 +1335,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
       </div>
 
       {pipeline.length === 0
-        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet — search in Leads tab and hit + Pipeline</p></Card>
+        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet â€” search in Leads tab and hit + Pipeline</p></Card>
         : visible.length === 0
           ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
           : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1338,7 +1346,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
   );
 }
 
-// ─── PROPOSAL MODULE ──────────────────────────────────────────────────────────
+// â”€â”€â”€ PROPOSAL MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ProposalModule() {
   const BLANK = { businessName: "", contactName: "", scope: [], scopeNotes: "", timeline: "1 week", carePlan: false, careRate: "200" };
   const [form,     setForm]     = useState(BLANK);
@@ -1354,7 +1362,7 @@ function ProposalModule() {
     { id: "booking",    label: "Booking Integration" },
   ];
 
-  const TIMELINE_OPTIONS = ["As little as 1 week", "2 weeks", "2-3 weeks", "3-4 weeks", "TBD — scope dependent"];
+  const TIMELINE_OPTIONS = ["As little as 1 week", "2 weeks", "2-3 weeks", "3-4 weeks", "TBD â€” scope dependent"];
 
   function toggleScope(id) {
     setForm(f => ({ ...f, scope: f.scope.includes(id) ? f.scope.filter(s => s !== id) : [...f.scope, id] }));
@@ -1377,7 +1385,7 @@ function ProposalModule() {
 
     const raw = await ai(
       RWS_CTX + `\n\nWrite a professional web design proposal. Return ONLY valid JSON, no backticks:
-{"subject":"Email subject line","greeting":"Short personalized opener, 1-2 sentences","overview":"2-3 sentences describing what RWS will deliver and why it matters for their business specifically","scopeItems":["Array of 4-6 specific deliverable bullets based on scope selected"],"timeline":"1-2 sentence timeline commitment","investment":"1-2 sentences on pricing and payment terms (50% upfront, 50% on launch)","nextSteps":"2-3 sentences on how to proceed — sign agreement, pay deposit, then Trafton handles the rest","closing":"One confident closing sentence"}`,
+{"subject":"Email subject line","greeting":"Short personalized opener, 1-2 sentences","overview":"2-3 sentences describing what RWS will deliver and why it matters for their business specifically","scopeItems":["Array of 4-6 specific deliverable bullets based on scope selected"],"timeline":"1-2 sentence timeline commitment","investment":"1-2 sentences on pricing and payment terms (50% upfront, 50% on launch)","nextSteps":"2-3 sentences on how to proceed â€” sign agreement, pay deposit, then Trafton handles the rest","closing":"One confident closing sentence"}`,
       `Client: ${form.businessName}${form.contactName ? ` (Contact: ${form.contactName})` : ""} | Scope: ${scopeLabels} | Timeline: ${form.timeline} | Pricing: ${pricing}${form.scopeNotes ? ` | Notes: ${form.scopeNotes}` : ""}`
     );
 
@@ -1390,7 +1398,7 @@ function ProposalModule() {
 
   function buildPlainText() {
     if (!proposal) return "";
-    const scopeList = (proposal.scopeItems || []).map(item => `  • ${item}`).join("\n");
+    const scopeList = (proposal.scopeItems || []).map(item => `  â€¢ ${item}`).join("\n");
     return `Subject: ${proposal.subject}
 
 ${proposal.greeting}
@@ -1438,7 +1446,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
           </div>
           <div>
             <Label>Contact Name</Label>
-            <input value={form.contactName} onChange={e => setForm(f => ({ ...f, contactName: e.target.value }))} placeholder="Optional — owner name" style={inputStyle} />
+            <input value={form.contactName} onChange={e => setForm(f => ({ ...f, contactName: e.target.value }))} placeholder="Optional â€” owner name" style={inputStyle} />
           </div>
         </div>
 
@@ -1492,7 +1500,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <Dot color={C.teal} />
-              <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Proposal — {form.businessName}</span>
+              <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Proposal â€” {form.businessName}</span>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={copyProposal} color={copied ? C.green : C.muted} sm>{copied ? "Copied" : "Copy Plain Text"}</Btn>
@@ -1501,7 +1509,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
 
           <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
             <div style={{ padding: "10px 14px", background: `${C.teal}08`, borderRadius: 8, border: `1px solid ${C.teal}20`, marginBottom: 16 }}>
-              <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, letterSpacing: "0.1em" }}>SUBJECT · </span>
+              <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, letterSpacing: "0.1em" }}>SUBJECT Â· </span>
               <span style={{ fontFamily: MONO, fontSize: 11, color: C.text }}>{proposal.subject}</span>
             </div>
 
@@ -1520,7 +1528,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {(proposal.scopeItems || []).map((item, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, flexShrink: 0, marginTop: 2 }}>●</span>
+                    <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, flexShrink: 0, marginTop: 2 }}>â—</span>
                     <span style={{ fontFamily: BODY, fontSize: 13, color: C.sub, lineHeight: 1.6 }}>{item}</span>
                   </div>
                 ))}
@@ -1549,7 +1557,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
   );
 }
 
-// ─── CLIENT TRACKER ───────────────────────────────────────────────────────────
+// â”€â”€â”€ CLIENT TRACKER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ClientTracker() {
   const [clients,  setClientsRaw] = useState([]);
   const [loaded,   setLoaded]     = useState(false);
@@ -1618,7 +1626,7 @@ function ClientTracker() {
                   <div>
                     <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{c.name}</span>
                     {c.siteUrl && <a href={c.siteUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.blue, marginLeft: 10, textDecoration: "none" }}>{c.siteUrl.replace(/https?:\/\//, "")}</a>}
-                    <p style={{ fontFamily: MONO, fontSize: 10, color: C.amber, margin: "3px 0 0" }}>{days}d since last check-in — 30-day cadence</p>
+                    <p style={{ fontFamily: MONO, fontSize: 10, color: C.amber, margin: "3px 0 0" }}>{days}d since last check-in â€” 30-day cadence</p>
                   </div>
                   <Btn sm color={C.green} onClick={() => updateClient(c.id, { lastCheckIn: new Date().toISOString() })}>Mark Checked In</Btn>
                 </div>
@@ -1668,7 +1676,7 @@ function ClientTracker() {
             </div>
             <div style={{ marginBottom: 12 }}>
               <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Notes</p>
-              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any context — what they wanted, quirks, referral source" style={{ ...inputStyle, resize: "vertical" }} />
+              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any context â€” what they wanted, quirks, referral source" style={{ ...inputStyle, resize: "vertical" }} />
             </div>
             <Btn onClick={addClient} disabled={!form.name.trim()} color={C.teal} sm>Save Client</Btn>
           </div>
@@ -1748,7 +1756,7 @@ function ClientTracker() {
   );
 }
 
-// ─── COMMAND CENTER ────────────────────────────────────────────────────────────
+// â”€â”€â”€ COMMAND CENTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CommandCenter({ prepData }) {
   const [tab,            setTab]           = useState("leads");
   const [pipelineLoaded, setPipelineLoaded] = useState(false);
@@ -1794,7 +1802,7 @@ function CommandCenter({ prepData }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Dot color={C.green} pulse size={8} />
             <span style={{ fontFamily: MONO, fontSize: 12, color: C.text, letterSpacing: "0.04em" }}>RWS Command</span>
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>· ops.rogers-websolutions.com</span>
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Â· ops.rogers-websolutions.com</span>
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             {[{ c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
@@ -1839,7 +1847,7 @@ function CommandCenter({ prepData }) {
   );
 }
 
-// ─── ROOT ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ ROOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function Page() {
   const [unlocked, setUnlocked] = useState(false);
   const [entered,  setEntered]  = useState(false);
