@@ -2020,6 +2020,161 @@ function ClientTracker() {
   );
 }
 
+// --- HASHTAG MODULE -----------------------------------------------------------
+function HashtagModule() {
+  const TAGS = {
+    location: ["#orangecounty","#orangecountyca","#anaheim","#socalbusiness","#southerncalifornia","#oclocal","#inlandempire","#losangelesbusiness"],
+    business: ["#smallbusinessowner","#localbusiness","#smallbusiness","#independentbusiness","#solopreneur","#businessowner","#entrepreneurs"],
+    niche: ["#nailtech","#nailbusiness","#handyman","#handymanservices","#contractorbusiness","#independentmotel","#hospitalitybusiness","#tradesbusiness","#servicebusiness"],
+    web: ["#webdesign","#websitedesign","#webdesigner","#smallbusinesswebsite","#websitedesignorangecounty","#webdesignorangecounty","#localseo","#digitalmarketing","#onlinepresence"],
+    pain: ["#getfoundgoogle","#needawebsite","#nowebsite","#growyourbusiness","#getmorecustomers","#morereviews","#bookmoreclients"],
+    community: ["#ocbusiness","#orangecountybusiness","#orangecountyentrepreneur","#supportlocal","#shoplocal","#ocsmallbusiness"],
+  };
+
+  const NICHE_OPTIONS = [
+    { id: "any",      label: "Any / General" },
+    { id: "nail",     label: "Nail Tech" },
+    { id: "handyman", label: "Handyman" },
+    { id: "motel",    label: "Motel / Hospitality" },
+    { id: "trades",   label: "Trades (HVAC, Plumbing, Electric)" },
+    { id: "cleaning", label: "Cleaning / Landscaping" },
+  ];
+
+  const NICHE_TAG_MAP = {
+    nail:     ["#nailtech","#nailbusiness"],
+    handyman: ["#handyman","#handymanservices"],
+    motel:    ["#independentmotel","#hospitalitybusiness"],
+    trades:   ["#contractorbusiness","#tradesbusiness"],
+    cleaning: ["#servicebusiness","#tradesbusiness"],
+    any:      ["#servicebusiness","#smallbusinessowner"],
+  };
+
+  const [niche,     setNiche]     = useState("any");
+  const [generated, setGenerated] = useState(null);
+  const [history,   setHistory]   = useState([]);
+  const [copied,    setCopied]    = useState(false);
+
+  function pick(arr, n, exclude = []) {
+    const pool = arr.filter(t => !exclude.includes(t));
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, n);
+  }
+
+  function generate() {
+    const lastSet   = history[history.length - 1] || [];
+    const location  = pick(TAGS.location,  3, lastSet);
+    const nichetags = NICHE_TAG_MAP[niche] || NICHE_TAG_MAP.any;
+    const web       = pick(TAGS.web,       2, lastSet);
+    const pain      = pick(TAGS.pain,      2, lastSet);
+    const community = pick(TAGS.community, 1, lastSet);
+    const set = [...location, ...nichetags, ...web, ...pain, ...community];
+    setGenerated(set);
+    setHistory(h => [...h.slice(-9), set]);
+    setCopied(false);
+  }
+
+  function copy() {
+    if (!generated) return;
+    navigator.clipboard?.writeText(generated.join(" "));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const CATEGORY_META = [
+    { key: "location",  color: C.blue,   label: "Location" },
+    { key: "niche",     color: C.green,  label: "Niche" },
+    { key: "web",       color: C.purple, label: "Web / Digital" },
+    { key: "pain",      color: C.amber,  label: "Pain Point" },
+    { key: "community", color: C.teal,   label: "Community" },
+  ];
+
+  const nicheTagSet = new Set(NICHE_TAG_MAP[niche] || []);
+
+  function tagCategory(tag) {
+    if (TAGS.location.includes(tag))  return C.blue;
+    if (nicheTagSet.has(tag))         return C.green;
+    if (TAGS.web.includes(tag))       return C.purple;
+    if (TAGS.pain.includes(tag))      return C.amber;
+    if (TAGS.community.includes(tag)) return C.teal;
+    return C.muted;
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <Dot color={C.purple} />
+          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Hashtag Generator</span>
+          <Pill color={C.purple} sm>Instagram</Pill>
+        </div>
+
+        <Label>Post Niche</Label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
+          {NICHE_OPTIONS.map(o => (
+            <button key={o.id} onClick={() => setNiche(o.id)}
+              style={{ fontFamily: MONO, fontSize: 10, padding: "5px 13px", borderRadius: 20, cursor: "pointer", background: niche === o.id ? `${C.purple}18` : "transparent", border: `1px solid ${niche === o.id ? C.purple : C.border}`, color: niche === o.id ? C.purple : C.muted }}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <Btn onClick={generate} color={C.purple}>Generate Set</Btn>
+          {generated && <Btn onClick={generate} color={C.muted} sm>Regenerate</Btn>}
+          {generated && <Btn onClick={copy} color={copied ? C.green : C.muted} sm>{copied ? "Copied" : "Copy All"}</Btn>}
+        </div>
+
+        {generated && (
+          <>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16, padding: "16px", background: "rgba(0,0,0,0.25)", borderRadius: 10, border: `1px solid ${C.border}` }}>
+              {generated.map(tag => {
+                const color = tagCategory(tag);
+                return (
+                  <span key={tag} onClick={() => { navigator.clipboard?.writeText(tag); }}
+                    style={{ fontFamily: MONO, fontSize: 11, color, background: `${color}12`, border: `1px solid ${color}30`, borderRadius: 20, padding: "3px 10px", cursor: "pointer" }}
+                    title="Click to copy tag">
+                    {tag}
+                  </span>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+              {CATEGORY_META.map(c => (
+                <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <Dot color={c.color} size={5} />
+                  <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{c.label}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
+
+      <Card>
+        <Label>Rotation Rules</Label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {[
+            { color: C.blue,   text: "2-3 location tags per post" },
+            { color: C.green,  text: "1-2 niche callouts -- highest leverage, targets warm leads" },
+            { color: C.purple, text: "2 web/digital tags" },
+            { color: C.amber,  text: "1-2 pain point tags" },
+            { color: C.teal,   text: "1 community tag" },
+          ].map((r, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Dot color={r.color} size={6} />
+              <span style={{ fontFamily: BODY, fontSize: 13, color: C.sub }}>{r.text}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 14, padding: "10px 14px", background: `${C.amber}08`, borderRadius: 8, border: `1px solid ${C.amber}20` }}>
+          <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber }}>Note: </span>
+          <span style={{ fontFamily: BODY, fontSize: 12, color: C.sub }}>IG treats identical hashtag blocks as spam over time. Each generated set is varied to avoid repeating the exact same combination.</span>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // --- COMMAND CENTER ------------------------------------------------------------
 function CommandCenter({ prepData }) {
   const [tab,            setTab]           = useState("leads");
@@ -2057,6 +2212,7 @@ function CommandCenter({ prepData }) {
     { id: "proposal", label: "Proposal", dot: C.teal   },
     { id: "clients",  label: "Clients",  dot: C.teal   },
     { id: "analytics",label: "Analytics",dot: C.blue   },
+    { id: "hashtags", label: "Hashtags",  dot: C.purple },
   ];
 
   return (
@@ -2098,6 +2254,7 @@ function CommandCenter({ prepData }) {
         <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead}       onRemove={removeLead} onAdd={addToPipeline} /></div>        <div style={{ display: tab === "proposal"  ? "block" : "none" }}><ProposalModule /></div>
         <div style={{ display: tab === "clients"   ? "block" : "none" }}><ClientTracker /></div>
         <div style={{ display: tab === "analytics" ? "block" : "none" }}><AnalyticsModule pipeline={pipeline} /></div>
+        <div style={{ display: tab === "hashtags"  ? "block" : "none" }}><HashtagModule /></div>
       </div>
 
       <style>{`
