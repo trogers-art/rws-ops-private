@@ -364,6 +364,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
   const [brief,      setBrief]      = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [prepStatus, setPrepStatus] = useState("running");
+  const [weekLog,    setWeekLog]    = useState({ dms: 0, emails: 0, today: { dms: 0, emails: 0 } });
 
   const now       = new Date();
   const hour      = now.getHours();
@@ -375,6 +376,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
   useEffect(() => {
     // Load analytics first so niche rotation works correctly
     ensureAnalyticsLoaded().then(() => {
+      setWeekLog(getWeekLog());
       const todayNiche = pickTodayNiche();
 
       const briefP = ai(
@@ -463,6 +465,34 @@ function LoginScreen({ onEnter, onPrepReady }) {
               </>
           }
         </>)}
+        {card("0.18s", (() => {
+          const todayTotal = weekLog.today.dms + weekLog.today.emails;
+          const weekTotal  = weekLog.dms + weekLog.emails;
+          const goal       = 5;
+          const pct        = Math.min(100, Math.round((todayTotal / goal) * 100));
+          const statusColor = todayTotal >= goal ? C.green : todayTotal > 0 ? C.amber : C.muted;
+          const statusLabel = todayTotal >= goal ? "Goal hit" : todayTotal > 0 ? "In progress" : "Not started";
+          return <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <Label>Outreach Today</Label>
+              <Pill color={statusColor} sm>{statusLabel}</Pill>
+            </div>
+            <div style={{ display: "flex", gap: 20, marginBottom: 12 }}>
+              {[{ val: weekLog.today.dms, label: "DMs today", color: C.purple }, { val: weekLog.today.emails, label: "Emails today", color: C.green }, { val: weekTotal, label: "This week", color: C.blue }].map(s => (
+                <div key={s.label}>
+                  <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: s.color }}>{s.val}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: 6 }}>{s.label}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1, height: 5, background: "rgba(255,255,255,0.06)", borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${pct}%`, background: statusColor, borderRadius: 3, transition: "width 0.4s ease" }} />
+              </div>
+              <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, flexShrink: 0 }}>{todayTotal}/{goal}</span>
+            </div>
+          </>;
+        })())}
         {card("0.24s", <>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <Label>Tech Pulse</Label>
@@ -762,7 +792,7 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
 }
 
 // â”€â”€â”€ PIPELINE CARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
+function PipelineCard({ lead, onUpdate, onRemove, onStatusChange, compact = false }) {
   const [editing,   setEditing]   = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [editData,  setEditData]  = useState({
@@ -802,6 +832,7 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
       <div style={{ padding: "14px 18px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+            {fu?.urgent && <Dot color={lead.status === "followup" ? C.red : C.amber} size={8} pulse />}
             <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 600, color: C.text }}>{lead.name}</span>
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{lead.city}</span>
             {lead.grade && <Pill color={gc} sm>Grade {lead.grade}</Pill>}
@@ -829,16 +860,117 @@ function PipelineCard({ lead, onUpdate, onRemove, onStatusChange }) {
           <Btn onClick={() => onRemove(lead.id)} color={C.red} sm>Remove</Btn>
         </div>
       </div>
-      <div style={{ padding: "0 18px 12px", display: "flex", flexWrap: "wrap", gap: 5 }}>
-        {Object.entries(STATUS).map(([id, st]) => (
-          <button key={id} onClick={() => onStatusChange(lead.id, id)}
-            style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === id ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === id ? st.color : C.border}`, color: lead.status === id ? st.color : C.muted }}>
-            {st.label}
-          </button>
-        ))}
-      </div>
+      {!compact && (
+        <div style={{ padding: "0 18px 12px", display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {Object.entries(STATUS).map(([id, st]) => (
+            <button key={id} onClick={() => onStatusChange(lead.id, id)}
+              style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === id ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === id ? st.color : C.border}`, color: lead.status === id ? st.color : C.muted }}>
+              {st.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {compact && (
+        <div style={{ padding: "0 18px 10px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {fu && <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>}
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {Object.entries(STATUS).map(([id, st]) => (
+              <button key={id} onClick={() => onStatusChange(lead.id, id)}
+                style={{ fontFamily: MONO, fontSize: 9, padding: "2px 7px", borderRadius: 20, cursor: "pointer", background: lead.status === id ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === id ? st.color : C.border}`, color: lead.status === id ? st.color : C.muted }}>
+                {st.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
-      <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} />
+      {!compact && <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} />}
+    </div>
+  );
+}
+
+// ─── ADD LEAD MODAL ──────────────────────────────────────────────────────────
+function AddLeadModal({ onAdd, onClose }) {
+  const BLANK = { name: "", city: "", category: "", phone: "", email: "", instagramHandle: "", website: "", grade: "", notes: "" };
+  const [form, setForm] = useState(BLANK);
+
+  function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
+
+  function submit() {
+    if (!form.name.trim()) return;
+    const handle = form.instagramHandle.replace(/^@/, "");
+    const lead = {
+      id: `${Date.now()}-${Math.random()}`,
+      status: "new",
+      addedAt: new Date().toISOString(),
+      contactedAt: null,
+      manuallyAdded: true,
+      name: form.name.trim(),
+      city: form.city.trim(),
+      category: form.category.trim(),
+      phone: form.phone.trim() || null,
+      email: form.email.trim() || null,
+      instagramHandle: handle ? `@${handle}` : null,
+      instagram: handle ? `https://www.instagram.com/${handle}/` : null,
+      website: form.website.trim() || null,
+      hasWebsite: !!(form.website.trim()),
+      grade: form.grade || null,
+      notes: form.notes.trim(),
+      enriched: !!(form.email.trim() || handle),
+    };
+    onAdd(lead);
+    onClose();
+  }
+
+  const inputStyle = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.4)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "8px 11px", fontFamily: MONO, fontSize: 12, color: C.text, outline: "none" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 14, padding: "26px 28px", width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Add Lead Manually</span>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: MONO, fontSize: 13 }}>✕</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+          {[
+            { key: "name",     label: "Business Name *", placeholder: "ABC Plumbing Co." },
+            { key: "city",     label: "City",            placeholder: "Anaheim" },
+            { key: "category", label: "Category",        placeholder: "HVAC, plumber..." },
+            { key: "phone",    label: "Phone",           placeholder: "(714) 555-0100" },
+            { key: "email",    label: "Email",           placeholder: "owner@biz.com" },
+            { key: "instagramHandle", label: "Instagram Handle", placeholder: "@handle" },
+          ].map(f => (
+            <div key={f.key}>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>{f.label}</p>
+              <input value={form[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} style={inputStyle} />
+            </div>
+          ))}
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Website</p>
+          <input value={form.website} onChange={e => set("website", e.target.value)} placeholder="https://..." style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Grade</p>
+          <div style={{ display: "flex", gap: 6 }}>
+            {["A","B","C","D"].map(g => (
+              <button key={g} onClick={() => set("grade", form.grade === g ? "" : g)}
+                style={{ fontFamily: MONO, fontSize: 11, padding: "5px 14px", borderRadius: 20, cursor: "pointer", background: form.grade === g ? `${GRADE_COLOR[g]}18` : "transparent", border: `1px solid ${form.grade === g ? GRADE_COLOR[g] : C.border}`, color: form.grade === g ? GRADE_COLOR[g] : C.muted }}>
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Notes</p>
+          <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} placeholder="Context, referral source, anything relevant"
+            style={{ ...inputStyle, resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn onClick={submit} disabled={!form.name.trim()} color={C.green}>Add to Pipeline</Btn>
+          <Btn onClick={onClose} color={C.muted}>Cancel</Btn>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1241,10 +1373,14 @@ function AnalyticsModule({ pipeline }) {
 }
 
 // â”€â”€â”€ PIPELINE MODULE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function PipelineModule({ pipeline, onUpdate, onRemove }) {
-  const [filter,  setFilter]  = useState("all");
-  const [weekLog, setWeekLog] = useState({ dms: 0, emails: 0, today: { dms: 0, emails: 0 } });
+function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
+  const [filter,           setFilter]           = useState("all");
+  const [weekLog,          setWeekLog]          = useState({ dms: 0, emails: 0, today: { dms: 0, emails: 0 } });
   const [expandedFollowUp, setExpandedFollowUp] = useState(null);
+  const [sortBy,           setSortBy]           = useState("addedAt");
+  const [sortDir,          setSortDir]          = useState("desc");
+  const [viewMode,         setViewMode]         = useState("list");
+  const [showAddModal,     setShowAddModal]     = useState(false);
 
   useEffect(() => { ensureAnalyticsLoaded().then(() => setWeekLog(getWeekLog())); }, []);
 
@@ -1252,13 +1388,106 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
   const closed    = pipeline.filter(l => l.status === "closed").length;
   const contacted = pipeline.filter(l => l.status !== "new").length;
   const followUps = pipeline.filter(l => followUpStatus(l)?.urgent);
-  const visible   = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
 
   function handleStatusChange(id, newStatus) {
     const patch = { status: newStatus };
     if (newStatus === "contacted" || newStatus === "followup") patch.contactedAt = new Date().toISOString();
     onUpdate(id, patch);
   }
+
+  function sortLeads(leads) {
+    return [...leads].sort((a, b) => {
+      let av, bv;
+      if (sortBy === "addedAt") {
+        av = a.addedAt ? new Date(a.addedAt).getTime() : 0;
+        bv = b.addedAt ? new Date(b.addedAt).getTime() : 0;
+      } else if (sortBy === "lastContact") {
+        av = a.contactedAt ? new Date(a.contactedAt).getTime() : 0;
+        bv = b.contactedAt ? new Date(b.contactedAt).getTime() : 0;
+      } else if (sortBy === "grade") {
+        const order = { A: 0, B: 1, C: 2, D: 3 };
+        av = order[a.grade] ?? 9;
+        bv = order[b.grade] ?? 9;
+      } else if (sortBy === "type") {
+        av = a.category || "";
+        bv = b.category || "";
+        return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+      } else if (sortBy === "urgency") {
+        av = followUpStatus(a)?.urgent ? 0 : 1;
+        bv = followUpStatus(b)?.urgent ? 0 : 1;
+      } else { av = 0; bv = 0; }
+      return sortDir === "asc" ? av - bv : bv - av;
+    });
+  }
+
+  function toggleSort(field) {
+    if (sortBy === field) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortBy(field); setSortDir("desc"); }
+  }
+
+  const filtered = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
+  const visible  = sortLeads(filtered);
+
+  function KanbanView() {
+    const KANBAN_COLS = [
+      { ids: ["new"],                  label: "New",        color: C.muted  },
+      { ids: ["contacted","followup"], label: "In Contact", color: C.blue   },
+      { ids: ["warm"],                 label: "Warm",       color: C.green  },
+    ];
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+        {KANBAN_COLS.map(col => {
+          const colLeads = sortLeads(pipeline.filter(l => col.ids.includes(l.status)));
+          return (
+            <div key={col.label}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+                <Dot color={col.color} size={6} />
+                <span style={{ fontFamily: MONO, fontSize: 10, color: col.color, textTransform: "uppercase", letterSpacing: "0.1em" }}>{col.label}</span>
+                <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>({colLeads.length})</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {colLeads.length === 0
+                  ? <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px" }}>
+                      <p style={{ fontFamily: MONO, fontSize: 10, color: "rgba(255,255,255,0.12)", margin: 0, textAlign: "center" }}>Empty</p>
+                    </div>
+                  : colLeads.map(l => {
+                      const fu = followUpStatus(l);
+                      const gc = GRADE_COLOR[l.grade] || C.muted;
+                      return (
+                        <div key={l.id} style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : C.border}`, borderRadius: 8, padding: "10px 12px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, flexWrap: "wrap" }}>
+                            {fu?.urgent && <Dot color={l.status === "followup" ? C.red : C.amber} size={6} pulse />}
+                            <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{l.name}</span>
+                            {l.grade && <Pill color={gc} sm>Grade {l.grade}</Pill>}
+                          </div>
+                          {fu && <p style={{ fontFamily: MONO, fontSize: 10, color: fu.color, margin: "0 0 6px" }}>{fu.label}</p>}
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {Object.entries(STATUS).filter(([id]) => !col.ids.includes(id)).slice(0, 3).map(([id, st]) => (
+                              <button key={id} onClick={() => handleStatusChange(l.id, id)}
+                                style={{ fontFamily: MONO, fontSize: 9, padding: "2px 7px", borderRadius: 20, cursor: "pointer", background: "transparent", border: `1px solid ${C.border}`, color: C.muted }}>
+                                → {st.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })
+                }
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const SORT_OPTIONS = [
+    { id: "addedAt",     label: "Added"   },
+    { id: "lastContact", label: "Contact" },
+    { id: "grade",       label: "Grade"   },
+    { id: "type",        label: "Type"    },
+    { id: "urgency",     label: "Urgent"  },
+  ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1299,7 +1528,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {followUps.map(l => {
-              const fu        = followUpStatus(l);
+              const fu         = followUpStatus(l);
               const isExpanded = expandedFollowUp === l.id;
               return (
                 <div key={l.id} style={{ background: `${C.red}08`, border: `1px solid ${C.red}30`, borderRadius: 10, overflow: "hidden" }}>
@@ -1329,22 +1558,53 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {[{ id: "all", label: `All (${pipeline.length})` }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: `${s.label} (${pipeline.filter(l => l.status === id).length})` }))].map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)}
-            style={{ fontFamily: MONO, fontSize: 10, padding: "5px 12px", borderRadius: 20, cursor: "pointer", background: filter === f.id ? `${C.green}14` : "transparent", border: `1px solid ${filter === f.id ? C.green : C.border}`, color: filter === f.id ? C.green : C.muted }}>
-            {f.label}
-          </button>
-        ))}
-      </div>
+      {/* Controls panel */}
+      <Card style={{ padding: "14px 18px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", flexShrink: 0 }}>Filter</span>
+            {[{ id: "all", label: `All (${pipeline.length})` }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: `${s.label} (${pipeline.filter(l => l.status === id).length})` }))].map(f => (
+              <button key={f.id} onClick={() => setFilter(f.id)}
+                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: filter === f.id ? `${C.green}14` : "transparent", border: `1px solid ${filter === f.id ? C.green : C.border}`, color: filter === f.id ? C.green : C.muted }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", flexShrink: 0 }}>Sort</span>
+            {SORT_OPTIONS.map(opt => (
+              <button key={opt.id} onClick={() => toggleSort(opt.id)}
+                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: sortBy === opt.id ? `${C.blue}14` : "transparent", border: `1px solid ${sortBy === opt.id ? C.blue : C.border}`, color: sortBy === opt.id ? C.blue : C.muted }}>
+                {opt.label}{sortBy === opt.id ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", flexShrink: 0 }}>View</span>
+            {[{ id: "list", label: "List" }, { id: "compact", label: "Compact" }, { id: "kanban", label: "Kanban" }].map(v => (
+              <button key={v.id} onClick={() => setViewMode(v.id)}
+                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: viewMode === v.id ? `${C.amber}14` : "transparent", border: `1px solid ${viewMode === v.id ? C.amber : C.border}`, color: viewMode === v.id ? C.amber : C.muted }}>
+                {v.label}
+              </button>
+            ))}
+            <div style={{ marginLeft: "auto" }}>
+              <Btn onClick={() => setShowAddModal(true)} color={C.green} sm>+ Add Lead</Btn>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {showAddModal && <AddLeadModal onAdd={lead => { onAdd(lead); }} onClose={() => setShowAddModal(false)} />}
 
       {pipeline.length === 0
-        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet - search in Leads tab and hit + Pipeline</p></Card>
-        : visible.length === 0
-          ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
-          : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {visible.map(l => <PipelineCard key={l.id} lead={l} onUpdate={onUpdate} onRemove={onRemove} onStatusChange={handleStatusChange} />)}
-            </div>
+        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet - search in Leads tab or hit + Add Lead</p></Card>
+        : viewMode === "kanban"
+          ? <KanbanView />
+          : visible.length === 0
+            ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
+            : <div style={{ display: "flex", flexDirection: "column", gap: viewMode === "compact" ? 6 : 10 }}>
+                {visible.map(l => <PipelineCard key={l.id} lead={l} onUpdate={onUpdate} onRemove={onRemove} onStatusChange={handleStatusChange} compact={viewMode === "compact"} />)}
+              </div>
       }
     </div>
   );
@@ -1835,8 +2095,7 @@ function CommandCenter({ prepData }) {
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 24px" }}>
         <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState}    onAdd={addToPipeline} pipelineNames={pipelineNames} /></div>
         <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
-        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead}       onRemove={removeLead} /></div>
-        <div style={{ display: tab === "proposal"  ? "block" : "none" }}><ProposalModule /></div>
+        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead}       onRemove={removeLead} onAdd={addToPipeline} /></div>        <div style={{ display: tab === "proposal"  ? "block" : "none" }}><ProposalModule /></div>
         <div style={{ display: tab === "clients"   ? "block" : "none" }}><ClientTracker /></div>
         <div style={{ display: tab === "analytics" ? "block" : "none" }}><AnalyticsModule pipeline={pipeline} /></div>
       </div>
