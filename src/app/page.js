@@ -617,7 +617,6 @@ function CopyPanel({ prospect, onSend, copyType = null }) {
       }
     } catch (e) { setGenError(`Error: ${e.message}`); }
     setGenerating(false);
-  }    setGenerating(false);
   }
 
   async function handleSend() {
