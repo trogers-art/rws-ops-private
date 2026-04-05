@@ -34,7 +34,7 @@ const STATUS = {
 
 const GRADE_COLOR = { A: C.green, B: C.amber, C: C.blue, D: C.muted };
 
-// Tech pulse topic categories â€” one per day-of-week, forces variety
+// Tech pulse topic categories - one per day-of-week, forces variety
 const TECH_TOPICS = [
   "AI/LLM tooling, inference optimization, or agent frameworks",
   "Network observability, eBPF, or modern monitoring stacks",
@@ -50,11 +50,11 @@ const RWS_CTX = `You are the AI operations assistant for Rogers Web Solutions (R
 KEY FACTS:
 - Trafton works a full-time day job 8-5 M-F as a Senior Network Engineer in Anaheim
 - RWS builds affordable websites ($500-$1,000) with monthly care plans ($150-$300/mo)
-- Target clients: local OC small businesses â€” trades (HVAC, plumbing, electrical), nail techs, handymen, independent motels, Instagram-based service businesses
+- Target clients: local OC small businesses - trades (HVAC, plumbing, electrical), nail techs, handymen, independent motels, Instagram-based service businesses
 - Email: trogers@rogers-websolutions.com | Book a call: https://www.rogers-websolutions.com/book
 - Only available evenings and weekends
 
-TRAFTON'S VOICE â€” follow this exactly:
+TRAFTON'S VOICE - follow this exactly:
 - Direct and confident. Get to the point in the first sentence.
 - Consultative, not salesy. Point out a real problem, don't pitch a product.
 - Data-driven. Reference real ratings, review counts, missing website specifically.
@@ -64,10 +64,10 @@ TRAFTON'S VOICE â€” follow this exactly:
 - NEVER use em-dashes, exclamation points, or fake casual openers
 - NEVER invent data. Only use facts provided about the actual business.
 
-EMAIL SIGNATURE â€” always end emails with exactly this, on its own line:
+EMAIL SIGNATURE - always end emails with exactly this, on its own line:
 Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com
 
-DM SIGN-OFF â€” always end DMs with this on its own line:
+DM SIGN-OFF - always end DMs with this on its own line:
 Trafton @ Rogers Web Solutions`;
 
 const NICHES = [
@@ -379,7 +379,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
 
       const briefP = ai(
         RWS_CTX + `\n\nGenerate a daily briefing. Return ONLY valid JSON, no backticks, no markdown:
-{"synopsis":"2-3 sentences. Mention today is ${dayStr}. Weekend means no day job constraints.","focus":"Single highest-leverage RWS task today â€” be specific and actionable.","tech":"2 sentences specifically about: ${techTopic}. Name actual products, tools, or companies. Make it feel like a real headline, not a textbook definition.","motivation":"One grounded punchy sentence. No quotes. Not cheesy. Not generic."}`,
+{"synopsis":"2-3 sentences. Mention today is ${dayStr}. Weekend means no day job constraints.","focus":"Single highest-leverage RWS task today - be specific and actionable.","tech":"2 sentences specifically about: ${techTopic}. Name actual products, tools, or companies. Make it feel like a real headline, not a textbook definition.","motivation":"One grounded punchy sentence. No quotes. Not cheesy. Not generic."}`,
         `Today: ${dayStr}. Weekend: ${isWeekend}. Hour: ${hour}. Tech topic for today: ${techTopic}.`
       ).then(raw => {
         try { setBrief(JSON.parse(raw.replace(/```json|```/g, "").trim())); }
@@ -493,7 +493,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
       </div>
 
       <button onClick={onEnter} style={{ fontFamily: MONO, fontSize: 12, letterSpacing: "0.14em", textTransform: "uppercase", padding: "14px 44px", borderRadius: 50, cursor: "pointer", background: `${C.green}14`, border: `1px solid ${C.green}55`, color: C.green, transition: "all 0.2s", animation: "fadeUp 0.5s ease both", animationDelay: "0.5s", opacity: 0 }}>
-        {prepStatus === "done" ? "Enter â€” Leads Ready" : "Enter Command Center"}
+        {prepStatus === "done" ? "Enter - Leads Ready" : "Enter Command Center"}
       </button>
       <style>{`
         @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
@@ -559,7 +559,7 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
 // â”€â”€â”€ SHARED: COPY PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // copyType: "cold" | "followup" | "secondbump"
 // copyType from banner cards controls generation. null = cold (PipelineCard default).
-function CopyPanel({ prospect, onSend, copyType = null }) {
+function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) {
   const [draft,      setDraft]      = useState(null);
   const [generating, setGenerating] = useState(false);
   const [genError,   setGenError]   = useState(null);
@@ -572,6 +572,11 @@ function CopyPanel({ prospect, onSend, copyType = null }) {
     setDraft(null); setExpanded(false); setGenError(null);
   }, [prospect.name, prospect.email, prospect.instagram, prospect.websiteType, prospect.website, prospect.hasWebsite, prospect.notes]);
 
+  // Auto-generate on mount for banner cards
+  useEffect(() => {
+    if (autoGenerate) generateCopy();
+  }, []);
+
   async function generateCopy() {
     if (draft) { setExpanded(e => !e); return; }
     setGenerating(true); setGenError(null);
@@ -579,11 +584,11 @@ function CopyPanel({ prospect, onSend, copyType = null }) {
     const wType      = prospect.websiteType;
     const wUrl       = prospect.website;
     const websiteCtx =
-      wType === "link_in_bio" ? `Has a link-in-bio page (${wUrl}) â€” NOT a real website`
-      : wType === "weak"      ? `Has a weak DIY website (${wUrl}) â€” poor SEO`
+      wType === "link_in_bio" ? `Has a link-in-bio page (${wUrl}) - NOT a real website`
+      : wType === "weak"      ? `Has a weak DIY website (${wUrl}) - poor SEO`
       : wType === "real"      ? `Has a real website: ${wUrl}`
       : wUrl                  ? `Has website: ${wUrl}`
-      : "No website â€” completely invisible online";
+      : "No website - completely invisible online";
 
     const contactInfo = [
       prospect.email     ? `Email: ${prospect.email}` : null,
@@ -638,7 +643,7 @@ function CopyPanel({ prospect, onSend, copyType = null }) {
       </div>
       {genError && (
         <div style={{ marginTop: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} â€” hit Retry</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} - hit Retry</span>
         </div>
       )}
       {expanded && draft && (
@@ -888,7 +893,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
       const result   = await enrichLead(prospect);
       const enriched = { ...prospect, ...result, enriched: true };
       if (!!(enriched.email || enriched.instagram)) { onAdd(enriched); added++; log.push(`Added: ${prospect.name}`); }
-      else { skipped++; log.push(`Skipped: ${prospect.name} â€” no contact`); }
+      else { skipped++; log.push(`Skipped: ${prospect.name} - no contact`); }
       setAutoLog([...log]);
     }
     log.push(`Done. ${added} added, ${skipped} skipped.`); setAutoLog([...log]); setAutoPipelining(false);
@@ -906,7 +911,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
       const result   = await enrichLead(prospect);
       const enriched = { ...prospect, ...result, enriched: true };
       if (!!(enriched.email || enriched.instagram)) { onAdd(enriched); added++; log.push(`Added: ${prospect.name}`); }
-      else { skipped++; log.push(`Skipped: ${prospect.name} â€” no contact`); }
+      else { skipped++; log.push(`Skipped: ${prospect.name} - no contact`); }
       setAutoLog([...log]);
     }
     log.push(`Done. ${added} added, ${skipped} skipped.`); setAutoLog([...log]); setAutoPipelining(false);
@@ -926,10 +931,10 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   const noSite   = visible.filter(p => !p.hasWebsite);
   const autoCandidates = visible.filter(p => (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)).length;
   const gradeGroups = [
-    { grade: "A", label: "Grade A â€” Perfect Fit",          color: C.green, items: aGrade },
-    { grade: "B", label: "Grade B â€” Solid Prospect",       color: C.amber, items: bGrade },
-    { grade: "C", label: "Grade C â€” Redesign / Care Plan", color: C.blue,  items: cGrade },
-    { grade: "D", label: "Grade D â€” Has Website",          color: C.muted, items: dGrade },
+    { grade: "A", label: "Grade A - Perfect Fit",          color: C.green, items: aGrade },
+    { grade: "B", label: "Grade B - Solid Prospect",       color: C.amber, items: bGrade },
+    { grade: "C", label: "Grade C - Redesign / Care Plan", color: C.blue,  items: cGrade },
+    { grade: "D", label: "Grade D - Has Website",          color: C.muted, items: dGrade },
   ].filter(g => g.items.length > 0);
 
   return (
@@ -1086,9 +1091,9 @@ function followUpStatus(lead) {
   if (!lead.contactedAt) return null;
   const days = daysSince(lead.contactedAt);
   if (days === null) return null;
-  if (lead.status === "contacted" && days >= 4) return { label: `${days}d â€” Follow-up due`,   color: C.amber, urgent: true  };
-  if (lead.status === "followup"  && days >= 4) return { label: `${days}d â€” Second bump due`, color: C.red,   urgent: true  };
-  if (lead.status === "contacted" && days >= 2) return { label: `${days}d â€” Sent`,            color: C.blue,  urgent: false };
+  if (lead.status === "contacted" && days >= 4) return { label: `${days}d - Follow-up due`,   color: C.amber, urgent: true  };
+  if (lead.status === "followup"  && days >= 4) return { label: `${days}d - Second bump due`, color: C.red,   urgent: true  };
+  if (lead.status === "contacted" && days >= 2) return { label: `${days}d - Sent`,            color: C.blue,  urgent: false };
   return { label: `${days}d since contact`, color: C.muted, urgent: false };
 }
 
@@ -1135,7 +1140,7 @@ function AnalyticsModule({ pipeline }) {
       {(pipeline.length < 3 || activeDays < 2) && (
         <div style={{ background: `${C.amber}08`, border: `1px solid ${C.amber}25`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
           <Dot color={C.amber} size={6} />
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>Early data â€” trends get meaningful at 30+ days and 10+ leads.</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>Early data - trends get meaningful at 30+ days and 10+ leads.</span>
         </div>
       )}
       <Card>
@@ -1316,7 +1321,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
                       <Btn sm color={C.red}    onClick={() => handleStatusChange(l.id, "cold")}>Mark Cold</Btn>
                     </div>
                   </div>
-                  {isExpanded && <CopyPanel prospect={l} onSend={() => handleStatusChange(l.id, "followup")} copyType={l.status === "followup" ? "secondbump" : "followup"} />}
+                  {isExpanded && <CopyPanel prospect={l} onSend={() => handleStatusChange(l.id, "followup")} copyType={l.status === "followup" ? "secondbump" : "followup"} autoGenerate />}
                 </div>
               );
             })}
@@ -1334,7 +1339,7 @@ function PipelineModule({ pipeline, onUpdate, onRemove }) {
       </div>
 
       {pipeline.length === 0
-        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet â€” search in Leads tab and hit + Pipeline</p></Card>
+        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet - search in Leads tab and hit + Pipeline</p></Card>
         : visible.length === 0
           ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
           : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1361,7 +1366,7 @@ function ProposalModule() {
     { id: "booking",    label: "Booking Integration" },
   ];
 
-  const TIMELINE_OPTIONS = ["As little as 1 week", "2 weeks", "2-3 weeks", "3-4 weeks", "TBD â€” scope dependent"];
+  const TIMELINE_OPTIONS = ["As little as 1 week", "2 weeks", "2-3 weeks", "3-4 weeks", "TBD - scope dependent"];
 
   function toggleScope(id) {
     setForm(f => ({ ...f, scope: f.scope.includes(id) ? f.scope.filter(s => s !== id) : [...f.scope, id] }));
@@ -1384,7 +1389,7 @@ function ProposalModule() {
 
     const raw = await ai(
       RWS_CTX + `\n\nWrite a professional web design proposal. Return ONLY valid JSON, no backticks:
-{"subject":"Email subject line","greeting":"Short personalized opener, 1-2 sentences","overview":"2-3 sentences describing what RWS will deliver and why it matters for their business specifically","scopeItems":["Array of 4-6 specific deliverable bullets based on scope selected"],"timeline":"1-2 sentence timeline commitment","investment":"1-2 sentences on pricing and payment terms (50% upfront, 50% on launch)","nextSteps":"2-3 sentences on how to proceed â€” sign agreement, pay deposit, then Trafton handles the rest","closing":"One confident closing sentence"}`,
+{"subject":"Email subject line","greeting":"Short personalized opener, 1-2 sentences","overview":"2-3 sentences describing what RWS will deliver and why it matters for their business specifically","scopeItems":["Array of 4-6 specific deliverable bullets based on scope selected"],"timeline":"1-2 sentence timeline commitment","investment":"1-2 sentences on pricing and payment terms (50% upfront, 50% on launch)","nextSteps":"2-3 sentences on how to proceed - sign agreement, pay deposit, then Trafton handles the rest","closing":"One confident closing sentence"}`,
       `Client: ${form.businessName}${form.contactName ? ` (Contact: ${form.contactName})` : ""} | Scope: ${scopeLabels} | Timeline: ${form.timeline} | Pricing: ${pricing}${form.scopeNotes ? ` | Notes: ${form.scopeNotes}` : ""}`
     );
 
@@ -1445,7 +1450,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
           </div>
           <div>
             <Label>Contact Name</Label>
-            <input value={form.contactName} onChange={e => setForm(f => ({ ...f, contactName: e.target.value }))} placeholder="Optional â€” owner name" style={inputStyle} />
+            <input value={form.contactName} onChange={e => setForm(f => ({ ...f, contactName: e.target.value }))} placeholder="Optional - owner name" style={inputStyle} />
           </div>
         </div>
 
@@ -1499,7 +1504,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <Dot color={C.teal} />
-              <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Proposal â€” {form.businessName}</span>
+              <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Proposal - {form.businessName}</span>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <Btn onClick={copyProposal} color={copied ? C.green : C.muted} sm>{copied ? "Copied" : "Copy Plain Text"}</Btn>
@@ -1625,7 +1630,7 @@ function ClientTracker() {
                   <div>
                     <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{c.name}</span>
                     {c.siteUrl && <a href={c.siteUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.blue, marginLeft: 10, textDecoration: "none" }}>{c.siteUrl.replace(/https?:\/\//, "")}</a>}
-                    <p style={{ fontFamily: MONO, fontSize: 10, color: C.amber, margin: "3px 0 0" }}>{days}d since last check-in â€” 30-day cadence</p>
+                    <p style={{ fontFamily: MONO, fontSize: 10, color: C.amber, margin: "3px 0 0" }}>{days}d since last check-in - 30-day cadence</p>
                   </div>
                   <Btn sm color={C.green} onClick={() => updateClient(c.id, { lastCheckIn: new Date().toISOString() })}>Mark Checked In</Btn>
                 </div>
@@ -1675,7 +1680,7 @@ function ClientTracker() {
             </div>
             <div style={{ marginBottom: 12 }}>
               <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Notes</p>
-              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any context â€” what they wanted, quirks, referral source" style={{ ...inputStyle, resize: "vertical" }} />
+              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any context - what they wanted, quirks, referral source" style={{ ...inputStyle, resize: "vertical" }} />
             </div>
             <Btn onClick={addClient} disabled={!form.name.trim()} color={C.teal} sm>Save Client</Btn>
           </div>
