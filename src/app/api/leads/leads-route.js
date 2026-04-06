@@ -1,5 +1,5 @@
 // src/app/api/leads/route.js
-// Fetches real local businesses from Google Maps via SerpAPI
+// Fetches real local businesses from Google Maps via Serper.dev
 // Shows ALL results — grades A/B/C/D, nothing hidden
 
 export async function GET(req) {
@@ -8,33 +8,40 @@ export async function GET(req) {
   const location = searchParams.get("location") || "Orange County, California";
 
   if (!query) return Response.json({ error: "Missing query param" }, { status: 400 });
-  if (!process.env.SERPAPI_KEY) return Response.json({ error: "SERPAPI_KEY not set" }, { status: 500 });
+  if (!process.env.SERPER_API_KEY) return Response.json({ error: "SERPER_API_KEY not set" }, { status: 500 });
 
   try {
-    const params = new URLSearchParams({
-      engine:  "google_maps",
-      q:       `${query} ${location}`,
-      type:    "search",
-      api_key: process.env.SERPAPI_KEY,
+    const res = await fetch("https://google.serper.dev/maps", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": process.env.SERPER_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        q: `${query} ${location}`,
+        gl: "us",
+        hl: "en",
+      }),
     });
 
-    const res  = await fetch(`https://serpapi.com/search?${params}`);
     const data = await res.json();
 
     if (data.error) return Response.json({ error: data.error }, { status: 400 });
 
-    const results = data.local_results || [];
+    const results = data.places || [];
 
     const prospects = results
       .map(biz => {
-        const hasWebsite = !!biz.website;
-        const rating     = biz.rating  || 0;
-        const reviews    = biz.reviews || 0;
         const website    = biz.website || null;
+        const hasWebsite = !!website;
+        const rating     = biz.rating  || 0;
+        const reviews    = biz.ratingCount || biz.reviews || 0;
 
         // Detect weak website builders — C grade even with a site
-        const weakBuilders = ["wix.com", "squarespace.com", "godaddy.com", "weebly.com",
-          "jimdo.com", "site123.com", "webflow.io", "wordpress.com", "yolasite.com"];
+        const weakBuilders = [
+          "wix.com", "squarespace.com", "godaddy.com", "weebly.com",
+          "jimdo.com", "site123.com", "webflow.io", "wordpress.com", "yolasite.com",
+        ];
         const isWeakSite = hasWebsite && weakBuilders.some(b => website?.includes(b));
 
         let grade, gradeReason;
@@ -63,15 +70,17 @@ export async function GET(req) {
           name:        biz.title,
           address:     biz.address || "",
           city:        extractCity(biz.address || ""),
-          phone:       biz.phone   || null,
+          phone:       biz.phoneNumber || null,
           website,
           hasWebsite,
           isWeakSite,
           rating,
           reviews,
-          category:    biz.type || biz.types?.[0] || query,
-          mapsUrl:     biz.link || `https://www.google.com/maps/search/${encodeURIComponent(biz.title + " " + (biz.address || ""))}`,
-          thumbnail:   biz.thumbnail || null,
+          category:    biz.category || biz.type || query,
+          mapsUrl:     biz.cid
+            ? `https://www.google.com/maps?cid=${biz.cid}`
+            : `https://www.google.com/maps/search/${encodeURIComponent((biz.title || "") + " " + (biz.address || ""))}`,
+          thumbnail:   biz.thumbnailUrl || null,
           grade,
           gradeReason,
         };

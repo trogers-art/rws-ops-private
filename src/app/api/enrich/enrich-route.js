@@ -2,7 +2,7 @@
 // Enriches a lead with email and Instagram:
 // 1. Scrape website for email + IG + follow link-in-bio pages
 // 2. Apollo.io for owner email
-// 3. SerpAPI Google search for Instagram
+// 3. Serper.dev Google search for Instagram
 
 import { enrichLimiter } from "@/lib/rateLimit";
 
@@ -163,24 +163,30 @@ export async function POST(req) {
       } catch {}
     }
 
-    // ── STEP 3: SerpAPI for Instagram if not found ───────────────────────────
-    if (!result.instagram && process.env.SERPAPI_KEY) {
+    // ── STEP 3: Serper.dev for Instagram if not found ─────────────────────────
+    if (!result.instagram && process.env.SERPER_API_KEY) {
       try {
-        const params = new URLSearchParams({
-          engine: "google",
-          q: `"${name}" ${city} instagram`,
-          num: "5",
-          api_key: process.env.SERPAPI_KEY,
+        const serperRes = await fetch("https://google.serper.dev/search", {
+          method: "POST",
+          headers: {
+            "X-API-KEY": process.env.SERPER_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            q: `"${name}" ${city} instagram`,
+            num: 5,
+            gl: "us",
+            hl: "en",
+          }),
         });
 
-        const serpRes = await fetch(`https://serpapi.com/search?${params}`);
-        const serpData = await serpRes.json();
+        const serperData = await serperRes.json();
 
-        for (const r of (serpData.organic_results || [])) {
+        for (const r of (serperData.organic || [])) {
           const url = r.link || "";
           if (url.includes("instagram.com/")) {
             const igMatch = url.match(/instagram\.com\/([a-zA-Z0-9_.]{2,30})/);
-            if (igMatch && !["p","explore","reel","stories","tv"].includes(igMatch[1])) {
+            if (igMatch && !["p", "explore", "reel", "stories", "tv"].includes(igMatch[1])) {
               result.instagram = `https://www.instagram.com/${igMatch[1]}/`;
               result.instagramHandle = `@${igMatch[1]}`;
               result.instagramSource = "google_search";
