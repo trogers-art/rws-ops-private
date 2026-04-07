@@ -665,9 +665,9 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
 
     const typeInstructions =
       type === "secondbump"
-        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. Third and final contact. DM is ONE sentence only — no re-pitch, no pain points, no pressure. Just availability. Email is 2 short paragraphs max, different angle from first contact, still no pressure.`
+        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. Third and final contact. DM is ONE sentence only — just the door left open and the booking link. No re-pitch. No observation. No explanation of why anything would help them. No value proposition. Email: 2 sentences max, same rules.`
         : type === "followup"
-          ? `Write a FIRST follow-up IG DM and first follow-up email. No response to cold outreach. DM is 1-2 sentences MAX — do NOT re-introduce yourself, do NOT repeat the pitch, do NOT mention competitors or what they are losing. Just a brief different-angle nudge and the booking link. Email: 2-3 short paragraphs, new angle.`
+          ? `Write a FIRST follow-up IG DM and first follow-up email. They did not respond to cold outreach. STRICT RULES: Do NOT explain why a website, booking form, or any tool would help them. Do NOT pitch a value proposition. Do NOT say what something "could" do for them. One new observation or a soft open door, then the link. That is all. DM is 2 sentences MAX. Email: 2-3 short paragraphs, same rules — observation or door, link, done.`
           : `Write a cold IG DM and cold email for this REAL business. DM rules: 3 sentences MAX. Sentence 1: one specific observation about this business (use real data — rating, review count, no website). Sentence 2: state the practical gap in plain language, no lecturing, no "which means", no competitor mention, no pain amplification. Sentence 3: soft ask with rogers-websolutions.com/book. Cold email: 3-4 short paragraphs. Open with the same specific observation. Do not use "online presence", "digital footprint", "missing out", or any urgency language.`;
 
     const emailLabel = type === "secondbump" ? "Second follow-up" : type === "followup" ? "Follow-up" : "Cold";
