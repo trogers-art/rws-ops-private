@@ -55,14 +55,16 @@ KEY FACTS:
 - Only available evenings and weekends
 
 TRAFTON'S VOICE - follow this exactly:
-- Direct and confident. Get to the point in the first sentence.
-- Consultative, not salesy. Point out a real problem, don't pitch a product.
-- Data-driven. Reference real ratings, review counts, missing website specifically.
+- Lead with one specific observation about THIS business. Not a generic opener.
+- State the practical gap plainly. One sentence. Do not explain what it costs them or lecture them about it.
+- Never tell them they are losing business, losing clients, or falling behind competitors. They know their business. That framing is condescending and kills replies.
+- Never use competitor framing. Do not mention what competitors are doing.
 - Short. Every word earns its place.
-- Low-pressure close. Invite a conversation, send them to https://www.rogers-websolutions.com/book to book.
-- NEVER say: leverage, digital footprint, I'd love the opportunity, I hope this finds you well, we help businesses grow
-- NEVER use em-dashes, exclamation points, or fake casual openers
+- Low-pressure close. One sentence. Send them to rogers-websolutions.com/book.
+- NEVER say: leverage, digital footprint, online presence, I'd love the opportunity, I hope this finds you well, we help businesses grow, which means, that means, missing out
+- NEVER use em-dashes, exclamation points, or fake casual openers like "Hey!" or "Hope you're well"
 - NEVER invent data. Only use facts provided about the actual business.
+- DMs are for beauty/service Instagram businesses ONLY. Trades get email.
 
 EMAIL SIGNATURE - always end emails with exactly this, on its own line:
 Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com
@@ -663,18 +665,18 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
 
     const typeInstructions =
       type === "secondbump"
-        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. This is the third and final contact attempt — they have not responded to two previous messages. DM must be 1-2 sentences MAX. No pressure, no re-pitch. Just a brief check-in with the booking link. Email: 2-3 short paragraphs max.`
+        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. Third and final contact. DM is ONE sentence only — no re-pitch, no pain points, no pressure. Just availability. Email is 2 short paragraphs max, different angle from first contact, still no pressure.`
         : type === "followup"
-          ? `Write a FIRST follow-up IG DM and first follow-up email. They did not respond to initial cold outreach. Brief, low pressure, slightly different angle. Do NOT re-pitch from scratch or re-introduce yourself.`
-          : `Write a cold IG DM and cold email for this REAL business.`;
+          ? `Write a FIRST follow-up IG DM and first follow-up email. No response to cold outreach. DM is 1-2 sentences MAX — do NOT re-introduce yourself, do NOT repeat the pitch, do NOT mention competitors or what they are losing. Just a brief different-angle nudge and the booking link. Email: 2-3 short paragraphs, new angle.`
+          : `Write a cold IG DM and cold email for this REAL business. DM rules: 3 sentences MAX. Sentence 1: one specific observation about this business (use real data — rating, review count, no website). Sentence 2: state the practical gap in plain language, no lecturing, no "which means", no competitor mention, no pain amplification. Sentence 3: soft ask with rogers-websolutions.com/book. Cold email: 3-4 short paragraphs. Open with the same specific observation. Do not use "online presence", "digital footprint", "missing out", or any urgency language.`;
 
     const emailLabel = type === "secondbump" ? "Second follow-up" : type === "followup" ? "Follow-up" : "Cold";
-    const dmLength   = type === "secondbump" ? "1-2 sentences MAX" : "3-4 sentences";
+    const dmLength   = type === "secondbump" ? "1 sentence ONLY" : type === "followup" ? "1-2 sentences MAX" : "3 sentences MAX";
 
     try {
       const raw = await ai(
         RWS_CTX + `\n\n${typeInstructions} Return ONLY valid JSON, no backticks:
-{"dm":"${dmLength}. Casual Instagram DM. ${type === "cold" ? "Reference real rating and review count. Be precise about web presence." : "Do NOT re-introduce yourself or repeat the cold pitch."} Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"${type !== "cold" ? "Subject that makes clear this is a follow-up, not a first contact" : "Subject using their real data points"}","emailBody":"${emailLabel} email. ${type === "secondbump" ? "Very short — 2-3 paragraphs max." : "3-4 short paragraphs."} Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+{"dm":"${dmLength}. ${type === "cold" ? "Observation first. Gap second. Soft ask third. No competitor framing. No pain lecture." : "Do NOT re-introduce yourself or repeat the cold pitch. No pain points."} Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"${type !== "cold" ? "Subject that signals follow-up without being passive aggressive" : "Subject line using one specific real data point about the business — not generic"}","emailBody":"${emailLabel} email. ${type === "secondbump" ? "Very short — 2 paragraphs max. No re-pitch." : "3-4 short paragraphs. No urgency language. No competitor framing."} Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
         `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}* | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
       );
       if (raw.startsWith("Error:")) { setGenError(raw); }
@@ -1234,10 +1236,10 @@ function OutreachModule({ state, setState, pipeline }) {
     if (!target.trim()) return;
     setState(s => ({ ...s, loading: true, output: "" }));
     const prompts = {
-      cold:     "Write a cold outreach EMAIL with Subject: line. Human, value-first, Calendly close. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
-      dm:       "Write a cold Instagram DM. 3-4 sentences. Soft rogers-websolutions.com/book close. Final line: Trafton @ Rogers Web Solutions",
-      followup: "Write a follow-up email. Brief, no pressure. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
-      warm:     "Write a closing email. Confident, short, move to book. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
+      cold:     "Write a cold outreach EMAIL with Subject: line. Open with one specific observation about this business using real data. State the practical gap plainly — no competitor framing, no urgency, no 'which means', no pain amplification. 3-4 short paragraphs. Soft close with rogers-websolutions.com/book. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
+      dm:       "Write a cold Instagram DM. 3 sentences MAX. Sentence 1: specific observation using real data. Sentence 2: plain gap statement, no lecturing. Sentence 3: soft ask with rogers-websolutions.com/book. Final line: Trafton @ Rogers Web Solutions",
+      followup: "Write a follow-up email. 1-2 short paragraphs. Different angle from cold outreach. No re-pitch, no pain points, no urgency. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
+      warm:     "Write a closing email to a warm lead. Confident, short, direct path to booking. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
     };
     const r = await ai(RWS_CTX + `\n\n${prompts[type]}`, target);
     setState(s => ({ ...s, output: r, loading: false }));

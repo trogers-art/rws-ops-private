@@ -963,19 +963,37 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com
 DM SIGN-OFF - always end DMs with this on its own line:
 Trafton @ Rogers Web Solutions`;
 
+// --- PRIORITY NICHES WITH TARGETED LOCATIONS ---------------------------------
+// Each entry: { query, location, priority }
+// priority: "high" | "medium" â€” shown as a label in the scraper UI
 const NICHES = [
-  "HVAC companies Orange County",
-  "nail salons Anaheim",
-  "handymen Tustin",
-  "plumbers Orange County",
-  "electricians Fullerton",
-  "motels Orange County",
-  "landscapers Anaheim",
-  "auto detailers Orange County",
-  "pressure washing Orange County",
-  "lash techs Anaheim",
-  "house cleaners Tustin",
-  "painters Orange County",
+  // Tier 1 â€” highest density / highest likelihood of no web presence
+  { query: "nail salons",          location: "Westminster, CA",       priority: "high" },
+  { query: "nail salons",          location: "Garden Grove, CA",      priority: "high" },
+  { query: "nail salons",          location: "Santa Ana, CA",         priority: "high" },
+  { query: "lash extensions",      location: "Westminster, CA",       priority: "high" },
+  { query: "lash extensions",      location: "Fountain Valley, CA",   priority: "high" },
+  { query: "microblading",         location: "Garden Grove, CA",      priority: "high" },
+  { query: "handyman",             location: "Anaheim, CA",           priority: "high" },
+  { query: "handyman",             location: "Fullerton, CA",         priority: "high" },
+  { query: "pressure washing",     location: "Orange County, CA",     priority: "high" },
+  { query: "mobile car detailing", location: "Orange County, CA",     priority: "high" },
+  { query: "motels",               location: "Harbor Blvd Anaheim",   priority: "high" },
+  { query: "motels",               location: "Garden Grove, CA",      priority: "high" },
+
+  // Tier 2 â€” solid volume, slightly more competitive
+  { query: "HVAC companies",       location: "Anaheim, CA",           priority: "medium" },
+  { query: "plumbers",             location: "Fullerton, CA",         priority: "medium" },
+  { query: "electricians",         location: "Santa Ana, CA",         priority: "medium" },
+  { query: "painters",             location: "Buena Park, CA",        priority: "medium" },
+  { query: "landscapers",          location: "Anaheim, CA",           priority: "medium" },
+  { query: "house cleaners",       location: "Tustin, CA",            priority: "medium" },
+  { query: "spray tan studios",    location: "Orange County, CA",     priority: "medium" },
+  { query: "mobile pet groomers",  location: "Orange County, CA",     priority: "medium" },
+  { query: "mobile notary",        location: "Orange County, CA",     priority: "medium" },
+  { query: "permanent makeup",     location: "Mission Viejo, CA",     priority: "medium" },
+  { query: "motels",               location: "Buena Park, CA",        priority: "medium" },
+  { query: "lash extensions",      location: "Santa Ana, CA",         priority: "medium" },
 ];
 
 // --- API HELPERS --------------------------------------------------------------
@@ -1003,8 +1021,9 @@ async function enrichLead(lead) {
   } catch (e) { return { enriched: false, error: e.message }; }
 }
 
-async function fetchLeads(query) {
-  const res = await fetch(`/api/leads?q=${encodeURIComponent(query)}`);
+// location param is now passed through explicitly
+async function fetchLeads(query, location = "Orange County, California") {
+  const res = await fetch(`/api/leads?q=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}`);
   return res.json();
 }
 
@@ -1131,29 +1150,36 @@ function logOutreach(type) {
   saveOutreachLog(_outreachLog);
 }
 
-function logNicheSearch(dateKey, query, aCount, bCount) {
-  _nicheHistory.push({ query, date: dateKey, aCount, bCount, total: aCount + bCount });
+// nicheKey is "query :: location" so analytics track query+location combos
+function nicheKey(niche) {
+  return `${niche.query} :: ${niche.location}`;
+}
+
+function logNicheSearch(dateKey, niche, aCount, bCount) {
+  const key = nicheKey(niche);
+  _nicheHistory.push({ query: key, date: dateKey, aCount, bCount, total: aCount + bCount });
   _nicheHistory = _nicheHistory.slice(-200);
   saveNicheHistory(_nicheHistory);
 }
 
+// pickTodayNiche returns a full { query, location, priority } object
 function pickTodayNiche() {
-  // If nicheWeek is from a previous week, reset it
   const weekStart = getWeekStart();
   if (_nicheWeek.weekStart !== weekStart) {
     _nicheWeek = { weekStart, used: [] };
   }
-  // Pick a niche not used this week
-  const available = NICHES.filter(n => !_nicheWeek.used.includes(n));
-  const pool      = available.length > 0 ? available : NICHES; // reset if all used
-  // Deterministic-ish: use day of year mod pool length so same day = same pick
+  const available = NICHES.filter(n => !_nicheWeek.used.includes(nicheKey(n)));
+  // Prefer high-priority niches from available pool
+  const highPriority = available.filter(n => n.priority === "high");
+  const pool = highPriority.length > 0 ? highPriority : (available.length > 0 ? available : NICHES);
   const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
   return pool[dayOfYear % pool.length];
 }
 
 function markNicheUsed(niche) {
-  if (!_nicheWeek.used.includes(niche)) {
-    _nicheWeek = { ..._nicheWeek, used: [..._nicheWeek.used, niche] };
+  const key = nicheKey(niche);
+  if (!_nicheWeek.used.includes(key)) {
+    _nicheWeek = { ..._nicheWeek, used: [..._nicheWeek.used, key] };
     saveNicheWeek(_nicheWeek);
   }
 }
@@ -1267,7 +1293,6 @@ function LoginScreen({ onEnter, onPrepReady }) {
   const techTopic = TECH_TOPICS[now.getDay() % TECH_TOPICS.length];
 
   useEffect(() => {
-    // Load analytics first so niche rotation works correctly
     ensureAnalyticsLoaded().then(() => {
       setWeekLog(getWeekLog());
       const todayNiche = pickTodayNiche();
@@ -1285,7 +1310,8 @@ function LoginScreen({ onEnter, onPrepReady }) {
       const prepP = (async () => {
         try {
           markNicheUsed(todayNiche);
-          const data         = await fetchLeads(todayNiche);
+          // Pass both query and location from the niche object
+          const data         = await fetchLeads(todayNiche.query, todayNiche.location);
           logNicheSearch(todayKey(), todayNiche, data.aGrade || 0, data.bGrade || 0);
           const allResults   = data.prospects || [];
           const candidates   = allResults.filter(p => p.grade === "A" || p.grade === "B").slice(0, 8);
@@ -1317,7 +1343,12 @@ function LoginScreen({ onEnter, onPrepReady }) {
           }
 
           const allProspects = [...enrichedCandidates, ...rest];
-          onPrepReady({ prospects: allProspects, niche: todayNiche, autoPipelined: toAdd.length, pipeline: updatedPipeline });
+          onPrepReady({
+            prospects: allProspects,
+            niche: `${todayNiche.query} â€” ${todayNiche.location}`,
+            autoPipelined: toAdd.length,
+            pipeline: updatedPipeline,
+          });
         } catch (e) { console.error("prep error", e); }
         setPrepStatus("done");
       })();
@@ -1331,6 +1362,11 @@ function LoginScreen({ onEnter, onPrepReady }) {
       {content}
     </div>
   );
+
+  const todayNicheDisplay = (() => {
+    const n = pickTodayNiche();
+    return `${n.query} â€” ${n.location}`;
+  })();
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", backgroundImage: `radial-gradient(ellipse 55% 45% at 50% -5%, rgba(0,230,118,0.06) 0%, transparent 60%)` }}>
@@ -1407,7 +1443,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
             <div>
               <Label>Today's Leads</Label>
               <p style={{ fontFamily: BODY, fontSize: 13, color: C.sub, margin: 0 }}>
-                {prepStatus === "running" ? `Pulling + enriching: ${pickTodayNiche()}` : "Leads enriched and auto-pipelined"}
+                {prepStatus === "running" ? `Pulling + enriching: ${todayNicheDisplay}` : "Leads enriched and auto-pipelined"}
               </p>
             </div>
             <Pill color={prepStatus === "done" ? C.green : C.amber}>{prepStatus === "done" ? "ready" : "working"}</Pill>
@@ -1480,8 +1516,6 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
 }
 
 // --- SHARED: COPY PANEL -------------------------------------------------------
-// copyType: "cold" | "followup" | "secondbump"
-// copyType from banner cards controls generation. null = cold (PipelineCard default).
 function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) {
   const [draft,      setDraft]      = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -1495,7 +1529,6 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
     setDraft(null); setExpanded(false); setGenError(null);
   }, [prospect.name, prospect.email, prospect.instagram, prospect.websiteType, prospect.website, prospect.hasWebsite, prospect.notes]);
 
-  // Auto-generate on mount for banner cards
   useEffect(() => {
     if (autoGenerate) generateCopy();
   }, []);
@@ -1822,7 +1855,7 @@ function AddLeadModal({ onAdd, onClose }) {
       <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 14, padding: "26px 28px", width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Add Lead Manually</span>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: MONO, fontSize: 13 }}>âœ•</button>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: MONO, fontSize: 13 }}>x</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
           {[
@@ -1884,7 +1917,7 @@ async function loadDismissed() {
 
 // --- LEAD SCRAPER -------------------------------------------------------------
 function LeadScraper({ state, setState, onAdd, pipelineNames }) {
-  const { niche = "", prospects = [], loading = false, error = "" } = state;
+  const { niche = "", location = "Orange County, California", prospects = [], loading = false, error = "" } = state;
   const [dismissed,      setDismissed]      = useState(new Set());
   const [autoPipelining, setAutoPipelining] = useState(false);
   const [autoLog,        setAutoLog]        = useState([]);
@@ -1892,12 +1925,18 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
 
   useEffect(() => { loadDismissed().then(setDismissed); }, []);
 
+  // Quick-fill buttons from the priority niche list
+  function fillNiche(n) {
+    setState(s => ({ ...s, niche: n.query, location: n.location }));
+  }
+
   async function search() {
     if (!niche.trim()) return;
     setState(s => ({ ...s, loading: true, error: "" }));
-    const data = await fetchLeads(niche);
+    const searchLocation = location.trim() || "Orange County, California";
+    const data = await fetchLeads(niche, searchLocation);
     if (data.error) { setState(s => ({ ...s, loading: false, error: data.error })); return; }
-    logNicheSearch(todayKey(), niche, data.aGrade || 0, data.bGrade || 0);
+    logNicheSearch(todayKey(), { query: niche, location: searchLocation }, data.aGrade || 0, data.bGrade || 0);
     const newProspects = data.prospects || [];
     setState(s => {
       const existingNames = new Set((s.prospects || []).map(p => p.name));
@@ -1962,21 +2001,59 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
     { grade: "D", label: "Grade D - Has Website",          color: C.muted, items: dGrade },
   ].filter(g => g.items.length > 0);
 
+  const highPriorityNiches = NICHES.filter(n => n.priority === "high");
+  const medPriorityNiches  = NICHES.filter(n => n.priority === "medium");
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
           <Dot color={C.amber} />
           <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Lead Scraper</span>
           <Pill color={C.blue} sm>Google Maps  Real Data</Pill>
           {prospects.length > 0 && <Pill color={C.green} sm>{prospects.length} loaded</Pill>}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Field value={niche} onChange={v => setState(s => ({ ...s, niche: v }))} placeholder="e.g. lashes Orange County, HVAC Anaheim, plumbers Tustin" onKeyDown={e => e.key === "Enter" && search()} />
+
+        {/* Priority niche quick-fill */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <Label>Priority Targets</Label>
+            <Pill color={C.green} sm>High</Pill>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+            {highPriorityNiches.map((n, i) => (
+              <button key={i} onClick={() => fillNiche(n)}
+                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: (niche === n.query && location === n.location) ? `${C.green}18` : "rgba(255,255,255,0.03)", border: `1px solid ${(niche === n.query && location === n.location) ? C.green : C.border}`, color: (niche === n.query && location === n.location) ? C.green : C.sub }}>
+                {n.query} â€” {n.location}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <Pill color={C.amber} sm>Medium</Pill>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {medPriorityNiches.map((n, i) => (
+              <button key={i} onClick={() => fillNiche(n)}
+                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: (niche === n.query && location === n.location) ? `${C.amber}18` : "rgba(255,255,255,0.03)", border: `1px solid ${(niche === n.query && location === n.location) ? C.amber : C.border}`, color: (niche === n.query && location === n.location) ? C.amber : C.sub }}>
+                {n.query} â€” {n.location}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Manual search fields */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <div style={{ flex: 2 }}>
+            <Field value={niche} onChange={v => setState(s => ({ ...s, niche: v }))} placeholder="e.g. nail salons, handyman, motels" onKeyDown={e => e.key === "Enter" && search()} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field value={location} onChange={v => setState(s => ({ ...s, location: v }))} placeholder="e.g. Westminster, CA" onKeyDown={e => e.key === "Enter" && search()} />
+          </div>
           <Btn onClick={search} loading={loading} disabled={!niche.trim()} color={C.amber}>Search</Btn>
         </div>
+
         {prospects.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
             <button onClick={() => setState(s => ({ ...s, prospects: [] }))} style={{ fontFamily: MONO, fontSize: 10, background: "transparent", border: "none", color: C.muted, cursor: "pointer", padding: 0 }}>Clear all results</button>
             {autoCandidates > 0 && <Btn onClick={autoPipeline} loading={autoPipelining} color={C.green} sm>Auto-enrich &amp; Pipeline ({autoCandidates} A/B leads)</Btn>}
           </div>
@@ -2156,7 +2233,7 @@ function AnalyticsModule({ pipeline }) {
     if (!nicheMap[query]) nicheMap[query] = { searches: 0, aTotal: 0, bTotal: 0 };
     nicheMap[query].searches++; nicheMap[query].aTotal += aCount; nicheMap[query].bTotal += bCount;
   });
-  const nicheRows = Object.entries(nicheMap).map(([q, v]) => ({ query: q, ...v, avgA: v.searches ? (v.aTotal / v.searches).toFixed(1) : 0 })).sort((a, b) => b.aTotal - a.aTotal).slice(0, 8);
+  const nicheRows = Object.entries(nicheMap).map(([q, v]) => ({ query: q, ...v, avgA: v.searches ? (v.aTotal / v.searches).toFixed(1) : 0 })).sort((a, b) => b.aTotal - a.aTotal).slice(0, 10);
   const gradeMap  = { A: 0, B: 0, C: 0, D: 0 };
   pipeline.forEach(l => { if (l.grade) gradeMap[l.grade]++; });
 
@@ -2247,7 +2324,7 @@ function AnalyticsModule({ pipeline }) {
           ? <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No searches logged yet.</p>
           : <div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "0 0 8px", borderBottom: `1px solid ${C.border}`, marginBottom: 8 }}>
-                {["Niche","Searches","A Leads","B Leads","Avg A"].map(h => <span key={h} style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: h === "Niche" ? "left" : "right" }}>{h}</span>)}
+                {["Niche + Location","Searches","A Leads","B Leads","Avg A"].map(h => <span key={h} style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: h === "Niche + Location" ? "left" : "right" }}>{h}</span>)}
               </div>
               {nicheRows.map((row, i) => (
                 <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
@@ -2451,7 +2528,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
         </div>
       )}
 
-      {/* Controls panel */}
       <Card style={{ padding: "14px 18px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -2496,11 +2572,14 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
           : visible.length === 0
             ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
             : <div style={{ display: "flex", flexDirection: "column", gap: viewMode === "compact" ? 6 : 10 }}>
-                {visible.map(l => <PipelineCard key={l.id} lead={l} onUpdate={onUpdate} onRemove={onRemove} onStatusChange={handleStatusChange} compact={viewMode === "compact"} />)}
+                {visible.map(l => <PipelineCard key={l.id} lead={l} onUpdate={updateLead} onRemove={removeLead} onStatusChange={handleStatusChange} compact={viewMode === "compact"} />)}
               </div>
       }
     </div>
   );
+
+  function updateLead(id, patch) { onUpdate(id, patch); }
+  function removeLead(id)        { onRemove(id); }
 }
 
 // --- PROPOSAL MODULE ----------------------------------------------------------
@@ -3072,7 +3151,13 @@ function HashtagModule() {
 function CommandCenter({ prepData }) {
   const [tab,            setTab]           = useState("leads");
   const [pipelineLoaded, setPipelineLoaded] = useState(false);
-  const [leadsState,     setLeadsState]    = useState({ niche: prepData?.niche || "", prospects: prepData?.prospects || [], loading: false, error: "" });
+  const [leadsState,     setLeadsState]    = useState({
+    niche:     prepData?.niche?.split(" â€” ")[0] || "",
+    location:  prepData?.niche?.split(" â€” ")[1] || "Orange County, California",
+    prospects: prepData?.prospects || [],
+    loading:   false,
+    error:     "",
+  });
   const [outreachState,  setOutreachState] = useState({ type: "cold" });
   const [pipeline,       setPipelineRaw]  = useState([]);
 
@@ -3144,7 +3229,8 @@ function CommandCenter({ prepData }) {
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 24px" }}>
         <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState}    onAdd={addToPipeline} pipelineNames={pipelineNames} /></div>
         <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
-        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead}       onRemove={removeLead} onAdd={addToPipeline} /></div>        <div style={{ display: tab === "proposal"  ? "block" : "none" }}><ProposalModule /></div>
+        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead}       onRemove={removeLead} onAdd={addToPipeline} /></div>
+        <div style={{ display: tab === "proposal"  ? "block" : "none" }}><ProposalModule /></div>
         <div style={{ display: tab === "clients"   ? "block" : "none" }}><ClientTracker /></div>
         <div style={{ display: tab === "analytics" ? "block" : "none" }}><AnalyticsModule pipeline={pipeline} /></div>
         <div style={{ display: tab === "hashtags"  ? "block" : "none" }}><HashtagModule /></div>
