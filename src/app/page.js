@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const C = {
   bg:      "#07080b",
+  sidebar: "#0d0f14",
   card:    "#111318",
   cardHi:  "#161922",
   border:  "rgba(255,255,255,0.06)",
@@ -13,7 +14,7 @@ const C = {
   red:     "#ef5350",
   purple:  "#ab47bc",
   teal:    "#26c6da",
-  muted:   "rgba(255,255,255,0.32)",
+  muted:   "rgba(255,255,255,0.30)",
   sub:     "rgba(255,255,255,0.55)",
   text:    "rgba(255,255,255,0.88)",
   white:   "#ffffff",
@@ -34,7 +35,6 @@ const STATUS = {
 
 const GRADE_COLOR = { A: C.green, B: C.amber, C: C.blue, D: C.muted };
 
-// Tech pulse topic categories - one per day-of-week, forces variety
 const TECH_TOPICS = [
   "AI/LLM tooling, inference optimization, or agent frameworks",
   "Network observability, eBPF, or modern monitoring stacks",
@@ -72,11 +72,7 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com
 DM SIGN-OFF - always end DMs with this on its own line:
 Trafton @ Rogers Web Solutions`;
 
-// --- PRIORITY NICHES WITH TARGETED LOCATIONS ---------------------------------
-// Each entry: { query, location, priority }
-// priority: "high" | "medium" — shown as a label in the scraper UI
 const NICHES = [
-  // Tier 1 — highest density / highest likelihood of no web presence
   { query: "nail salons",          location: "Westminster, CA",       priority: "high" },
   { query: "nail salons",          location: "Garden Grove, CA",      priority: "high" },
   { query: "nail salons",          location: "Santa Ana, CA",         priority: "high" },
@@ -89,8 +85,6 @@ const NICHES = [
   { query: "mobile car detailing", location: "Orange County, CA",     priority: "high" },
   { query: "motels",               location: "Harbor Blvd Anaheim",   priority: "high" },
   { query: "motels",               location: "Garden Grove, CA",      priority: "high" },
-
-  // Tier 2 — solid volume, slightly more competitive
   { query: "HVAC companies",       location: "Anaheim, CA",           priority: "medium" },
   { query: "plumbers",             location: "Fullerton, CA",         priority: "medium" },
   { query: "electricians",         location: "Santa Ana, CA",         priority: "medium" },
@@ -130,7 +124,6 @@ async function enrichLead(lead) {
   } catch (e) { return { enriched: false, error: e.message }; }
 }
 
-// location param is now passed through explicitly
 async function fetchLeads(query, location = "Orange County, California") {
   const res = await fetch(`/api/leads?q=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}`);
   return res.json();
@@ -187,7 +180,6 @@ async function saveClients(clients) {
   } catch {}
 }
 
-// --- ANALYTICS STORAGE --------------------------------------------------------
 async function loadAnalytics() {
   try {
     const res = await fetch("/api/analytics", { headers: PIN_HEADER() });
@@ -259,10 +251,7 @@ function logOutreach(type) {
   saveOutreachLog(_outreachLog);
 }
 
-// nicheKey is "query :: location" so analytics track query+location combos
-function nicheKey(niche) {
-  return `${niche.query} :: ${niche.location}`;
-}
+function nicheKey(niche) { return `${niche.query} :: ${niche.location}`; }
 
 function logNicheSearch(dateKey, niche, aCount, bCount) {
   const key = nicheKey(niche);
@@ -271,17 +260,13 @@ function logNicheSearch(dateKey, niche, aCount, bCount) {
   saveNicheHistory(_nicheHistory);
 }
 
-// pickTodayNiche returns a full { query, location, priority } object
 function pickTodayNiche() {
   const weekStart = getWeekStart();
-  if (_nicheWeek.weekStart !== weekStart) {
-    _nicheWeek = { weekStart, used: [] };
-  }
-  const available = NICHES.filter(n => !_nicheWeek.used.includes(nicheKey(n)));
-  // Prefer high-priority niches from available pool
+  if (_nicheWeek.weekStart !== weekStart) _nicheWeek = { weekStart, used: [] };
+  const available    = NICHES.filter(n => !_nicheWeek.used.includes(nicheKey(n)));
   const highPriority = available.filter(n => n.priority === "high");
-  const pool = highPriority.length > 0 ? highPriority : (available.length > 0 ? available : NICHES);
-  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+  const pool         = highPriority.length > 0 ? highPriority : (available.length > 0 ? available : NICHES);
+  const dayOfYear    = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
   return pool[dayOfYear % pool.length];
 }
 
@@ -304,6 +289,39 @@ function getWeekLog() {
   return { dms, emails, today: _outreachLog[todayKey()] || { dms: 0, emails: 0 } };
 }
 
+async function dismissLead(name) {
+  try {
+    await fetch("/api/dismissed", { method: "POST", headers: { "Content-Type": "application/json", ...PIN_HEADER() }, body: JSON.stringify({ name }) });
+  } catch {}
+}
+
+async function loadDismissed() {
+  try {
+    const res = await fetch("/api/dismissed", { headers: PIN_HEADER() });
+    const d   = await res.json();
+    return new Set(d.dismissed || []);
+  } catch { return new Set(); }
+}
+
+// --- FOLLOW-UP HELPERS -------------------------------------------------------
+function daysSince(isoStr) {
+  if (!isoStr) return null;
+  const ts = Date.parse(isoStr);
+  if (isNaN(ts)) return null;
+  return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
+}
+
+function followUpStatus(lead) {
+  if (!["contacted", "followup"].includes(lead.status)) return null;
+  if (!lead.contactedAt) return null;
+  const days = daysSince(lead.contactedAt);
+  if (days === null) return null;
+  if (lead.status === "contacted" && days >= 4) return { label: `${days}d — follow-up due`,   color: C.amber, urgent: true  };
+  if (lead.status === "followup"  && days >= 4) return { label: `${days}d — second bump due`, color: C.red,   urgent: true  };
+  if (lead.status === "contacted" && days >= 2) return { label: `${days}d — sent`,            color: C.blue,  urgent: false };
+  return { label: `${days}d since contact`, color: C.muted, urgent: false };
+}
+
 // --- SHARED UI ----------------------------------------------------------------
 function Pill({ color, children, sm }) {
   return (
@@ -314,7 +332,7 @@ function Pill({ color, children, sm }) {
 }
 
 function Dot({ color, pulse, size = 7 }) {
-  return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", background: color, flexShrink: 0, boxShadow: `0 0 ${pulse ? 0 : 6}px ${color}80`, animation: pulse ? "ripple 2s ease-out infinite" : "none" }} />;
+  return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", background: color, flexShrink: 0, boxShadow: pulse ? `0 0 0 0 ${color}` : `0 0 6px ${color}80`, animation: pulse ? "ripple 2s ease-out infinite" : "none" }} />;
 }
 
 function Btn({ onClick, disabled, loading, children, color = C.green, sm }) {
@@ -360,6 +378,27 @@ function CopyBtn({ text, label = "Copy", sm, onCopy }) {
     if (onCopy) onCopy();
   }
   return <Btn onClick={copy} color={copied ? C.green : C.muted} sm={sm}>{copied ? "Copied" : label}</Btn>;
+}
+
+// Collapsible section wrapper used throughout
+function Section({ title, color = C.muted, count, defaultOpen = false, children, urgentBorder = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <div onClick={() => setOpen(o => !o)}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: urgentBorder ? `${C.red}06` : C.card, border: `1px solid ${urgentBorder ? C.red + "35" : C.border2}`, borderRadius: 8, cursor: "pointer", marginBottom: open ? 8 : 0, transition: "background 0.12s" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Dot color={color} size={6} pulse={urgentBorder} />
+          <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: urgentBorder ? C.red : C.text }}>{title}</span>
+          {count !== undefined && (
+            <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 7px", borderRadius: 20, background: `${color}12`, color, border: `1px solid ${color}20` }}>{count}</span>
+          )}
+        </div>
+        <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.2s", display: "inline-block" }}>▶</span>
+      </div>
+      {open && <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{children}</div>}
+    </div>
+  );
 }
 
 // --- PIN GATE -----------------------------------------------------------------
@@ -419,7 +458,6 @@ function LoginScreen({ onEnter, onPrepReady }) {
       const prepP = (async () => {
         try {
           markNicheUsed(todayNiche);
-          // Pass both query and location from the niche object
           const data         = await fetchLeads(todayNiche.query, todayNiche.location);
           logNicheSearch(todayKey(), todayNiche, data.aGrade || 0, data.bGrade || 0);
           const allResults   = data.prospects || [];
@@ -574,7 +612,7 @@ function LoginScreen({ onEnter, onPrepReady }) {
   );
 }
 
-// --- SHARED: EDIT PANEL -------------------------------------------------------
+// --- EDIT PANEL ---------------------------------------------------------------
 function EditPanel({ data, onChange, onSave, onCancel }) {
   return (
     <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", background: "rgba(171,71,188,0.04)" }}>
@@ -624,7 +662,7 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
   );
 }
 
-// --- SHARED: COPY PANEL -------------------------------------------------------
+// --- COPY PANEL ---------------------------------------------------------------
 function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) {
   const [draft,      setDraft]      = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -708,7 +746,7 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
       </div>
       {genError && (
         <div style={{ marginTop: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} - hit Retry</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} — hit Retry</span>
         </div>
       )}
       {expanded && draft && (
@@ -759,11 +797,12 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
   );
 }
 
-// --- LEAD CARD ----------------------------------------------------------------
-function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
+// --- LEAD GRID CARD -----------------------------------------------------------
+// Compact card for the 3-col grid. Click to expand action tray below.
+function LeadGridCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss, isSelected, onSelect }) {
   const [prospect,  setProspect]  = useState(initialProspect);
-  const [editing,   setEditing]   = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [editing,   setEditing]   = useState(false);
   const [editData,  setEditData]  = useState({
     email: prospect.email || "", instagram: prospect.instagram || "",
     instagramHandle: prospect.instagramHandle || "", website: prospect.website || "",
@@ -778,8 +817,9 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
     try {
       const result = await enrichLead(prospect);
       if (result && !result.error) {
-        setProspect(p => ({ ...p, email: result.email || p.email || null, instagram: result.instagram || p.instagram || null, instagramHandle: result.instagramHandle || p.instagramHandle || null, websiteType: result.websiteType || p.websiteType || null, enriched: true }));
-        setEditData(d => ({ ...d, email: result.email || d.email, instagram: result.instagram || d.instagram, instagramHandle: result.instagramHandle || d.instagramHandle, websiteType: result.websiteType || d.websiteType }));
+        const patch = { email: result.email || prospect.email || null, instagram: result.instagram || prospect.instagram || null, instagramHandle: result.instagramHandle || prospect.instagramHandle || null, websiteType: result.websiteType || prospect.websiteType || null, enriched: true };
+        setProspect(p => ({ ...p, ...patch }));
+        setEditData(d => ({ ...d, email: patch.email || d.email, instagram: patch.instagram || d.instagram, instagramHandle: patch.instagramHandle || d.instagramHandle, websiteType: patch.websiteType || d.websiteType }));
       }
     } catch (e) { console.error("Enrich failed:", e); }
     setEnriching(false);
@@ -790,238 +830,80 @@ function LeadCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss }) {
     setEditing(false);
   }
 
-  return (
-    <div style={{ background: C.cardHi, borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-      <div style={{ padding: "13px 16px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 700, color: C.text }}>{prospect.name}</span>
-            <Pill color={gc} sm>Grade {prospect.grade}</Pill>
-            {prospect.websiteType === "link_in_bio" && <Pill color={C.amber} sm>Link-in-bio</Pill>}
-            {!prospect.hasWebsite && prospect.websiteType !== "link_in_bio" && <Pill color={C.green} sm>No website</Pill>}
-            {isEnriched && <Pill color={C.blue} sm>Enriched</Pill>}
-            {prospect.manuallyEdited && <Pill color={C.purple} sm>Edited</Pill>}
-          </div>
-          <p style={{ fontFamily: MONO, fontSize: 11, color: C.muted, margin: "0 0 4px" }}>{prospect.address}</p>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 3 }}>
-            {prospect.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>* {prospect.rating} ({prospect.reviews})</span>}
-            {prospect.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{prospect.phone}</span>}
-            <a href={prospect.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>
-            {prospect.website && <a href={prospect.website} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.sub, textDecoration: "none" }}>{prospect.websiteType === "link_in_bio" ? "Link-in-bio" : "Website"}</a>}
-            {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{prospect.instagramHandle || "Instagram"}</a>}
-            {prospect.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{prospect.email}</span>}
-          </div>
-          {prospect.notes && <p style={{ fontFamily: MONO, fontSize: 10, color: C.sub, margin: "3px 0 0", fontStyle: "italic" }}>{prospect.notes}</p>}
-          <p style={{ fontFamily: MONO, fontSize: 10, color: gc, margin: "3px 0 0" }}>{prospect.gradeReason}</p>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <Btn onClick={() => onAdd(prospect)} disabled={inPipeline} color={inPipeline ? C.purple : C.green} sm>{inPipeline ? "Added" : "+ Pipeline"}</Btn>
-          <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>{isEnriched ? "Re-enrich" : "Enrich"}</Btn>
-          <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel" : "Edit"}</Btn>
-          <Btn onClick={() => onDismiss(prospect.name)} color={C.red} sm>Not a Fit</Btn>
-        </div>
-      </div>
-      {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
-    </div>
-  );
-}
-
-// --- PIPELINE CARD ------------------------------------------------------------
-function PipelineCard({ lead, onUpdate, onRemove, onStatusChange, compact = false }) {
-  const [editing,   setEditing]   = useState(false);
-  const [enriching, setEnriching] = useState(false);
-  const [editData,  setEditData]  = useState({
-    email: lead.email || "", instagram: lead.instagram || "", instagramHandle: lead.instagramHandle || "",
-    website: lead.website || "", hasWebsite: lead.hasWebsite ?? false, websiteType: lead.websiteType || "", notes: lead.notes || "",
-  });
-
-  useEffect(() => {
-    setEditData({ email: lead.email || "", instagram: lead.instagram || "", instagramHandle: lead.instagramHandle || "", website: lead.website || "", hasWebsite: lead.hasWebsite ?? false, websiteType: lead.websiteType || "", notes: lead.notes || "" });
-  }, [lead.id]);
-
-  const s      = STATUS[lead.status];
-  const fu     = followUpStatus(lead);
-  const gc     = GRADE_COLOR[lead.grade] || C.muted;
-  const liveLead = { ...lead, email: editData.email.trim() || lead.email || null, instagram: editData.instagram.trim() || lead.instagram || null, instagramHandle: editData.instagramHandle.trim() || lead.instagramHandle || null, notes: editData.notes.trim() || lead.notes || null, websiteType: editData.websiteType || lead.websiteType || null, hasWebsite: editData.hasWebsite ?? lead.hasWebsite };
-
-  async function handleEnrich() {
-    setEnriching(true);
-    try {
-      const result = await enrichLead(lead);
-      if (result && !result.error) {
-        const patch = { email: result.email || lead.email || null, instagram: result.instagram || lead.instagram || null, instagramHandle: result.instagramHandle || lead.instagramHandle || null, websiteType: result.websiteType || lead.websiteType || null, enriched: true };
-        onUpdate(lead.id, patch);
-        setEditData(d => ({ ...d, email: patch.email || d.email, instagram: patch.instagram || d.instagram, instagramHandle: patch.instagramHandle || d.instagramHandle, websiteType: patch.websiteType || d.websiteType }));
-      }
-    } catch (e) { console.error("Enrich failed:", e); }
-    setEnriching(false);
-  }
-
-  function saveEdit() {
-    onUpdate(lead.id, { email: editData.email.trim() || null, instagram: editData.instagram.trim() || null, instagramHandle: editData.instagramHandle.trim() || null, website: editData.website.trim() || null, hasWebsite: editData.hasWebsite, websiteType: editData.websiteType, notes: editData.notes.trim(), enriched: !!(editData.email || editData.instagram), manuallyEdited: true });
-    setEditing(false);
-  }
+  const liveLead = { ...prospect, email: editData.email.trim() || prospect.email || null, instagram: editData.instagram.trim() || prospect.instagram || null, instagramHandle: editData.instagramHandle.trim() || prospect.instagramHandle || null, notes: editData.notes.trim() || prospect.notes || null };
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : C.border2}`, borderRadius: 10, overflow: "hidden" }}>
-      <div style={{ padding: "14px 18px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-            {fu?.urgent && <Dot color={lead.status === "followup" ? C.red : C.amber} size={8} pulse />}
-            <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 600, color: C.text }}>{lead.name}</span>
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{lead.city}</span>
-            {lead.grade && <Pill color={gc} sm>Grade {lead.grade}</Pill>}
-            {lead.websiteType === "link_in_bio" && <Pill color={C.amber} sm>Link-in-bio</Pill>}
-            {lead.manuallyEdited && <Pill color={C.purple} sm>Edited</Pill>}
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 3 }}>
-            {lead.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>* {lead.rating} ({lead.reviews} reviews)</span>}
-            {lead.phone && <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub }}>{lead.phone}</span>}
-            {lead.email && <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>{lead.email}</span>}
-            {lead.mapsUrl && <a href={lead.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>Maps</a>}
-            {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || "Instagram"}</a>}
-          </div>
-          <div style={{ display: "flex", gap: 12, marginTop: 3, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Added {new Date(lead.addedAt).toLocaleDateString()}</span>
-            {lead.contactedAt && <span style={{ fontFamily: MONO, fontSize: 10, color: C.blue }}>Contacted {new Date(lead.contactedAt).toLocaleDateString()}</span>}
-            {fu && <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>}
-          </div>
-          {lead.notes && <p style={{ fontFamily: MONO, fontSize: 10, color: C.sub, margin: "4px 0 0", fontStyle: "italic" }}>{lead.notes}</p>}
+    <div
+      onClick={() => !editing && onSelect()}
+      style={{ background: C.cardHi, border: `1px solid ${isSelected ? "rgba(255,255,255,0.2)" : C.border}`, borderRadius: 8, overflow: "hidden", cursor: editing ? "default" : "pointer", transition: "border-color 0.12s" }}
+    >
+      <div style={{ padding: "11px 13px" }}>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 5 }}>
+          <Pill color={gc} sm>Grade {prospect.grade}</Pill>
+          {prospect.websiteType === "link_in_bio" && <Pill color={C.amber} sm>Link-in-bio</Pill>}
+          {!prospect.hasWebsite && prospect.websiteType !== "link_in_bio" && <Pill color={C.green} sm>No site</Pill>}
+          {isEnriched && <Pill color={C.blue} sm>Enriched</Pill>}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-end" }}>
-          <Pill color={s.color}>{s.label}</Pill>
-          <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>{lead.enriched ? "Re-enrich" : "Enrich"}</Btn>
-          <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel" : "Edit"}</Btn>
-          <Btn onClick={() => onRemove(lead.id)} color={C.red} sm>Remove</Btn>
+        <div style={{ fontFamily: BODY, fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{prospect.name}</div>
+        <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{prospect.address || prospect.city}</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {prospect.rating > 0 && <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber }}>★ {prospect.rating} ({prospect.reviews})</span>}
+          {prospect.phone && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{prospect.phone}</span>}
         </div>
+        <div style={{ fontFamily: MONO, fontSize: 9, color: gc, marginTop: 4, lineHeight: 1.4 }}>{prospect.gradeReason}</div>
       </div>
-      {!compact && (
-        <div style={{ padding: "0 18px 12px", display: "flex", flexWrap: "wrap", gap: 5 }}>
-          {Object.entries(STATUS).map(([id, st]) => (
-            <button key={id} onClick={() => onStatusChange(lead.id, id)}
-              style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === id ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === id ? st.color : C.border}`, color: lead.status === id ? st.color : C.muted }}>
-              {st.label}
-            </button>
-          ))}
+
+      {/* Expanded tray — only shown when this card is selected */}
+      {isSelected && (
+        <div onClick={e => e.stopPropagation()} style={{ borderTop: `1px solid ${C.border}` }}>
+          {/* Contact info row */}
+          <div style={{ padding: "10px 13px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${C.border}` }}>
+            {prospect.email && <span style={{ fontFamily: MONO, fontSize: 10, color: C.green }}>{prospect.email}</span>}
+            {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{prospect.instagramHandle || "Instagram"}</a>}
+            {prospect.mapsUrl && <a href={prospect.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.blue, textDecoration: "none" }}>Maps</a>}
+            {prospect.website && <a href={prospect.website} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.sub, textDecoration: "none" }}>{prospect.websiteType === "link_in_bio" ? "Link-in-bio" : "Website"}</a>}
+            {!prospect.email && !prospect.instagram && <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>No contact found — hit Enrich</span>}
+          </div>
+          {/* Action buttons */}
+          <div style={{ padding: "10px 13px", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Btn onClick={() => onAdd(prospect)} disabled={inPipeline} color={inPipeline ? C.purple : C.green} sm>{inPipeline ? "In Pipeline" : "+ Pipeline"}</Btn>
+            <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>{isEnriched ? "Re-enrich" : "Enrich"}</Btn>
+            <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel Edit" : "Edit"}</Btn>
+            <Btn onClick={() => onDismiss(prospect.name)} color={C.red} sm>Not a Fit</Btn>
+          </div>
+          {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
+          {!editing && <CopyPanel prospect={liveLead} onSend={() => {}} />}
         </div>
       )}
-      {compact && (
-        <div style={{ padding: "0 18px 10px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {fu && <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>}
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {Object.entries(STATUS).map(([id, st]) => (
-              <button key={id} onClick={() => onStatusChange(lead.id, id)}
-                style={{ fontFamily: MONO, fontSize: 9, padding: "2px 7px", borderRadius: 20, cursor: "pointer", background: lead.status === id ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === id ? st.color : C.border}`, color: lead.status === id ? st.color : C.muted }}>
-                {st.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
-      {!compact && <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} />}
     </div>
   );
 }
 
-// --- ADD LEAD MODAL ----------------------------------------------------------
-function AddLeadModal({ onAdd, onClose }) {
-  const BLANK = { name: "", city: "", category: "", phone: "", email: "", instagramHandle: "", website: "", grade: "", notes: "" };
-  const [form, setForm] = useState(BLANK);
+// --- LEAD GRADE GROUP --------------------------------------------------------
+function LeadGradeGroup({ grade, label, color, items, onAdd, pipelineNames, onDismiss, defaultOpen }) {
+  const [selectedName, setSelectedName] = useState(null);
 
-  function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
-
-  function submit() {
-    if (!form.name.trim()) return;
-    const handle = form.instagramHandle.replace(/^@/, "");
-    const lead = {
-      id: `${Date.now()}-${Math.random()}`,
-      status: "new",
-      addedAt: new Date().toISOString(),
-      contactedAt: null,
-      manuallyAdded: true,
-      name: form.name.trim(),
-      city: form.city.trim(),
-      category: form.category.trim(),
-      phone: form.phone.trim() || null,
-      email: form.email.trim() || null,
-      instagramHandle: handle ? `@${handle}` : null,
-      instagram: handle ? `https://www.instagram.com/${handle}/` : null,
-      website: form.website.trim() || null,
-      hasWebsite: !!(form.website.trim()),
-      grade: form.grade || null,
-      notes: form.notes.trim(),
-      enriched: !!(form.email.trim() || handle),
-    };
-    onAdd(lead);
-    onClose();
+  function handleSelect(name) {
+    setSelectedName(prev => prev === name ? null : name);
   }
 
-  const inputStyle = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.4)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "8px 11px", fontFamily: MONO, fontSize: 12, color: C.text, outline: "none" };
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 14, padding: "26px 28px", width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Add Lead Manually</span>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: MONO, fontSize: 13 }}>x</button>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-          {[
-            { key: "name",     label: "Business Name *", placeholder: "ABC Plumbing Co." },
-            { key: "city",     label: "City",            placeholder: "Anaheim" },
-            { key: "category", label: "Category",        placeholder: "HVAC, plumber..." },
-            { key: "phone",    label: "Phone",           placeholder: "(714) 555-0100" },
-            { key: "email",    label: "Email",           placeholder: "owner@biz.com" },
-            { key: "instagramHandle", label: "Instagram Handle", placeholder: "@handle" },
-          ].map(f => (
-            <div key={f.key}>
-              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>{f.label}</p>
-              <input value={form[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} style={inputStyle} />
-            </div>
-          ))}
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Website</p>
-          <input value={form.website} onChange={e => set("website", e.target.value)} placeholder="https://..." style={inputStyle} />
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Grade</p>
-          <div style={{ display: "flex", gap: 6 }}>
-            {["A","B","C","D"].map(g => (
-              <button key={g} onClick={() => set("grade", form.grade === g ? "" : g)}
-                style={{ fontFamily: MONO, fontSize: 11, padding: "5px 14px", borderRadius: 20, cursor: "pointer", background: form.grade === g ? `${GRADE_COLOR[g]}18` : "transparent", border: `1px solid ${form.grade === g ? GRADE_COLOR[g] : C.border}`, color: form.grade === g ? GRADE_COLOR[g] : C.muted }}>
-                {g}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{ marginBottom: 20 }}>
-          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Notes</p>
-          <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} placeholder="Context, referral source, anything relevant"
-            style={{ ...inputStyle, resize: "vertical" }} />
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Btn onClick={submit} disabled={!form.name.trim()} color={C.green}>Add to Pipeline</Btn>
-          <Btn onClick={onClose} color={C.muted}>Cancel</Btn>
-        </div>
+    <Section title={label} color={color} count={items.length} defaultOpen={defaultOpen}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 7 }}>
+        {items.map((p, i) => (
+          <LeadGridCard
+            key={`${p.name}-${i}`}
+            prospect={p}
+            onAdd={onAdd}
+            inPipeline={pipelineNames.has(p.name)}
+            onDismiss={onDismiss}
+            isSelected={selectedName === p.name}
+            onSelect={() => handleSelect(p.name)}
+          />
+        ))}
       </div>
-    </div>
+    </Section>
   );
-}
-
-async function dismissLead(name) {
-  try {
-    await fetch("/api/dismissed", { method: "POST", headers: { "Content-Type": "application/json", ...PIN_HEADER() }, body: JSON.stringify({ name }) });
-  } catch {}
-}
-
-async function loadDismissed() {
-  try {
-    const res = await fetch("/api/dismissed", { headers: PIN_HEADER() });
-    const d   = await res.json();
-    return new Set(d.dismissed || []);
-  } catch { return new Set(); }
 }
 
 // --- LEAD SCRAPER -------------------------------------------------------------
@@ -1031,10 +913,10 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   const [autoPipelining, setAutoPipelining] = useState(false);
   const [autoLog,        setAutoLog]        = useState([]);
   const [showAutoLog,    setShowAutoLog]    = useState(false);
+  const [nichesOpen,     setNichesOpen]     = useState(false);
 
   useEffect(() => { loadDismissed().then(setDismissed); }, []);
 
-  // Quick-fill buttons from the priority niche list
   function fillNiche(n) {
     setState(s => ({ ...s, niche: n.query, location: n.location }));
   }
@@ -1103,77 +985,82 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   const dGrade   = visible.filter(p => p.grade === "D");
   const noSite   = visible.filter(p => !p.hasWebsite);
   const autoCandidates = visible.filter(p => (p.grade === "A" || p.grade === "B") && !pipelineNames.has(p.name)).length;
+
   const gradeGroups = [
-    { grade: "A", label: "Grade A - Perfect Fit",          color: C.green, items: aGrade },
-    { grade: "B", label: "Grade B - Solid Prospect",       color: C.amber, items: bGrade },
-    { grade: "C", label: "Grade C - Redesign / Care Plan", color: C.blue,  items: cGrade },
-    { grade: "D", label: "Grade D - Has Website",          color: C.muted, items: dGrade },
+    { grade: "A", label: "Grade A — Perfect fit",          color: C.green, items: aGrade, defaultOpen: true  },
+    { grade: "B", label: "Grade B — Solid prospect",       color: C.amber, items: bGrade, defaultOpen: true  },
+    { grade: "C", label: "Grade C — Redesign / care plan", color: C.blue,  items: cGrade, defaultOpen: false },
+    { grade: "D", label: "Grade D — Has website",          color: C.muted, items: dGrade, defaultOpen: false },
   ].filter(g => g.items.length > 0);
 
   const highPriorityNiches = NICHES.filter(n => n.priority === "high");
   const medPriorityNiches  = NICHES.filter(n => n.priority === "medium");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          <Dot color={C.amber} />
-          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Lead Scraper</span>
-          <Pill color={C.blue} sm>Google Maps  Real Data</Pill>
-          {prospects.length > 0 && <Pill color={C.green} sm>{prospects.length} loaded</Pill>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+      {/* Search controls */}
+      <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 12, padding: "18px 20px" }}>
+        {/* Niche chips — collapsible */}
+        <div style={{ marginBottom: 14 }}>
+          <button onClick={() => setNichesOpen(o => !o)}
+            style={{ display: "flex", alignItems: "center", gap: 8, background: "transparent", border: "none", cursor: "pointer", padding: 0, marginBottom: nichesOpen ? 12 : 0 }}>
+            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.15em", textTransform: "uppercase" }}>Priority targets</span>
+            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, transform: nichesOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s", display: "inline-block" }}>▶</span>
+          </button>
+          {nichesOpen && (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <Pill color={C.green} sm>High</Pill>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
+                {highPriorityNiches.map((n, i) => (
+                  <button key={i} onClick={() => fillNiche(n)}
+                    style={{ fontFamily: MONO, fontSize: 9, padding: "3px 10px", borderRadius: 20, cursor: "pointer", background: (niche === n.query && location === n.location) ? `${C.green}18` : "rgba(255,255,255,0.03)", border: `1px solid ${(niche === n.query && location === n.location) ? C.green : C.border}`, color: (niche === n.query && location === n.location) ? C.green : C.sub }}>
+                    {n.query} — {n.location}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <Pill color={C.amber} sm>Medium</Pill>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {medPriorityNiches.map((n, i) => (
+                  <button key={i} onClick={() => fillNiche(n)}
+                    style={{ fontFamily: MONO, fontSize: 9, padding: "3px 10px", borderRadius: 20, cursor: "pointer", background: (niche === n.query && location === n.location) ? `${C.amber}18` : "rgba(255,255,255,0.03)", border: `1px solid ${(niche === n.query && location === n.location) ? C.amber : C.border}`, color: (niche === n.query && location === n.location) ? C.amber : C.sub }}>
+                    {n.query} — {n.location}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Priority niche quick-fill */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <Label>Priority Targets</Label>
-            <Pill color={C.green} sm>High</Pill>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-            {highPriorityNiches.map((n, i) => (
-              <button key={i} onClick={() => fillNiche(n)}
-                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: (niche === n.query && location === n.location) ? `${C.green}18` : "rgba(255,255,255,0.03)", border: `1px solid ${(niche === n.query && location === n.location) ? C.green : C.border}`, color: (niche === n.query && location === n.location) ? C.green : C.sub }}>
-                {n.query} — {n.location}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <Pill color={C.amber} sm>Medium</Pill>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {medPriorityNiches.map((n, i) => (
-              <button key={i} onClick={() => fillNiche(n)}
-                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: (niche === n.query && location === n.location) ? `${C.amber}18` : "rgba(255,255,255,0.03)", border: `1px solid ${(niche === n.query && location === n.location) ? C.amber : C.border}`, color: (niche === n.query && location === n.location) ? C.amber : C.sub }}>
-                {n.query} — {n.location}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Manual search fields */}
+        {/* Search fields */}
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <div style={{ flex: 2 }}>
-            <Field value={niche} onChange={v => setState(s => ({ ...s, niche: v }))} placeholder="e.g. nail salons, handyman, motels" onKeyDown={e => e.key === "Enter" && search()} />
+            <Field value={niche} onChange={v => setState(s => ({ ...s, niche: v }))} placeholder="nail salons, handyman, motels..." onKeyDown={e => e.key === "Enter" && search()} />
           </div>
           <div style={{ flex: 1 }}>
-            <Field value={location} onChange={v => setState(s => ({ ...s, location: v }))} placeholder="e.g. Westminster, CA" onKeyDown={e => e.key === "Enter" && search()} />
+            <Field value={location} onChange={v => setState(s => ({ ...s, location: v }))} placeholder="Westminster, CA" onKeyDown={e => e.key === "Enter" && search()} />
           </div>
           <Btn onClick={search} loading={loading} disabled={!niche.trim()} color={C.amber}>Search</Btn>
         </div>
 
         {prospects.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
-            <button onClick={() => setState(s => ({ ...s, prospects: [] }))} style={{ fontFamily: MONO, fontSize: 10, background: "transparent", border: "none", color: C.muted, cursor: "pointer", padding: 0 }}>Clear all results</button>
-            {autoCandidates > 0 && <Btn onClick={autoPipeline} loading={autoPipelining} color={C.green} sm>Auto-enrich &amp; Pipeline ({autoCandidates} A/B leads)</Btn>}
+            <button onClick={() => setState(s => ({ ...s, prospects: [] }))} style={{ fontFamily: MONO, fontSize: 10, background: "transparent", border: "none", color: C.muted, cursor: "pointer", padding: 0 }}>Clear results</button>
+            {autoCandidates > 0 && <Btn onClick={autoPipeline} loading={autoPipelining} color={C.green} sm>Auto-enrich &amp; pipeline ({autoCandidates} A/B)</Btn>}
           </div>
         )}
         {error && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "10px 0 0" }}>Error: {error}</p>}
-      </Card>
+      </div>
 
+      {/* Auto-pipeline log */}
       {showAutoLog && autoLog.length > 0 && (
-        <Card style={{ padding: "14px 18px" }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "14px 18px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <Label>Auto-pipeline Log</Label>
+            <Label>Auto-pipeline log</Label>
             {!autoPipelining && <button onClick={() => setShowAutoLog(false)} style={{ fontFamily: MONO, fontSize: 10, background: "transparent", border: "none", color: C.muted, cursor: "pointer" }}>Dismiss</button>}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -1183,20 +1070,27 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {autoPipelining && i === autoLog.length - 1 && !isDone
-                    ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>{'->'}</span>
-                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>{isAdded ? "+" : isSkipped ? "-" : isDone ? "-" : ""}</span>}
+                    ? <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, animation: "blink 0.9s step-start infinite" }}>{">"}</span>
+                    : <span style={{ fontFamily: MONO, fontSize: 10, color, flexShrink: 0 }}>{isAdded ? "+" : isSkipped ? "-" : isDone ? "—" : ""}</span>}
                   <span style={{ fontFamily: MONO, fontSize: 11, color }}>{line}</span>
                 </div>
               );
             })}
           </div>
-        </Card>
+        </div>
       )}
 
-      {loading && <Card><p style={{ fontFamily: MONO, fontSize: 12, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Pulling real businesses from Google Maps...</span></p></Card>}
+      {/* Loading state */}
+      {loading && (
+        <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "16px 20px" }}>
+          <p style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: 0 }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Pulling businesses from Google Maps...</span></p>
+        </div>
+      )}
 
+      {/* Results */}
       {!loading && visible.length > 0 && (
         <>
+          {/* Stats strip */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
             {[{ label: "Total", val: visible.length, color: C.sub }, { label: "No Site", val: noSite.length, color: C.green }, { label: "Grade A", val: aGrade.length, color: C.green }, { label: "Grade B", val: bGrade.length, color: C.amber }, { label: "Grade C", val: cGrade.length, color: C.blue }].map(s => (
               <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
@@ -1205,18 +1099,36 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
               </div>
             ))}
           </div>
-          {gradeGroups.map(g => (
-            <div key={g.grade}>
-              <div style={{ marginBottom: 10 }}><Pill color={g.color}>{g.label}</Pill></div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {g.items.map((p, i) => <LeadCard key={`${p.name}-${i}`} prospect={p} onAdd={onAdd} inPipeline={pipelineNames.has(p.name)} onDismiss={handleDismiss} />)}
-              </div>
-            </div>
-          ))}
+
+          {/* Grade groups */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {gradeGroups.map(g => (
+              <LeadGradeGroup
+                key={g.grade}
+                grade={g.grade}
+                label={g.label}
+                color={g.color}
+                items={g.items}
+                onAdd={onAdd}
+                pipelineNames={pipelineNames}
+                onDismiss={handleDismiss}
+                defaultOpen={g.defaultOpen}
+              />
+            ))}
+          </div>
         </>
       )}
-      {!loading && visible.length === 0 && prospects.length > 0 && <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>All results dismissed or in pipeline.</p></Card>}
-      {!loading && prospects.length === 0 && niche && !error && <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>Hit Search to pull real businesses from Google Maps.</p></Card>}
+
+      {!loading && visible.length === 0 && prospects.length > 0 && (
+        <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "16px 20px" }}>
+          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>All results dismissed or in pipeline.</p>
+        </div>
+      )}
+      {!loading && prospects.length === 0 && niche && !error && (
+        <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "16px 20px" }}>
+          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>Hit Search to pull real businesses from Google Maps.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1289,23 +1201,816 @@ function OutreachModule({ state, setState, pipeline }) {
   );
 }
 
-// --- FOLLOW-UP HELPERS --------------------------------------------------------
-function daysSince(isoStr) {
-  if (!isoStr) return null;
-  const ts = Date.parse(isoStr);
-  if (isNaN(ts)) return null;
-  return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
+// --- PIPELINE GRID CARD -------------------------------------------------------
+function PipelineGridCard({ lead, onUpdate, onRemove, onStatusChange, isSelected, onSelect }) {
+  const [editing,   setEditing]   = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [editData,  setEditData]  = useState({
+    email: lead.email || "", instagram: lead.instagram || "", instagramHandle: lead.instagramHandle || "",
+    website: lead.website || "", hasWebsite: lead.hasWebsite ?? false, websiteType: lead.websiteType || "", notes: lead.notes || "",
+  });
+
+  useEffect(() => {
+    setEditData({ email: lead.email || "", instagram: lead.instagram || "", instagramHandle: lead.instagramHandle || "", website: lead.website || "", hasWebsite: lead.hasWebsite ?? false, websiteType: lead.websiteType || "", notes: lead.notes || "" });
+  }, [lead.id]);
+
+  const s      = STATUS[lead.status];
+  const fu     = followUpStatus(lead);
+  const gc     = GRADE_COLOR[lead.grade] || C.muted;
+  const liveLead = { ...lead, email: editData.email.trim() || lead.email || null, instagram: editData.instagram.trim() || lead.instagram || null, instagramHandle: editData.instagramHandle.trim() || lead.instagramHandle || null, notes: editData.notes.trim() || lead.notes || null, websiteType: editData.websiteType || lead.websiteType || null };
+
+  async function handleEnrich() {
+    setEnriching(true);
+    try {
+      const result = await enrichLead(lead);
+      if (result && !result.error) {
+        const patch = { email: result.email || lead.email || null, instagram: result.instagram || lead.instagram || null, instagramHandle: result.instagramHandle || lead.instagramHandle || null, websiteType: result.websiteType || lead.websiteType || null, enriched: true };
+        onUpdate(lead.id, patch);
+        setEditData(d => ({ ...d, email: patch.email || d.email, instagram: patch.instagram || d.instagram, instagramHandle: patch.instagramHandle || d.instagramHandle, websiteType: patch.websiteType || d.websiteType }));
+      }
+    } catch (e) { console.error("Enrich failed:", e); }
+    setEnriching(false);
+  }
+
+  function saveEdit() {
+    onUpdate(lead.id, { email: editData.email.trim() || null, instagram: editData.instagram.trim() || null, instagramHandle: editData.instagramHandle.trim() || null, website: editData.website.trim() || null, hasWebsite: editData.hasWebsite, websiteType: editData.websiteType, notes: editData.notes.trim(), enriched: !!(editData.email || editData.instagram), manuallyEdited: true });
+    setEditing(false);
+  }
+
+  return (
+    <div
+      onClick={() => !editing && onSelect()}
+      style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : isSelected ? "rgba(255,255,255,0.2)" : C.border2}`, borderRadius: 8, overflow: "hidden", cursor: editing ? "default" : "pointer", transition: "border-color 0.12s" }}
+    >
+      <div style={{ padding: "11px 13px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, flexWrap: "wrap" }}>
+          {fu?.urgent && <Dot color={lead.status === "followup" ? C.red : C.amber} size={6} pulse />}
+          <Pill color={s.color} sm>{s.label}</Pill>
+          {lead.grade && <Pill color={gc} sm>{lead.grade}</Pill>}
+        </div>
+        <div style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</div>
+        <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginBottom: 3 }}>{lead.city}</div>
+        {lead.rating > 0 && <div style={{ fontFamily: MONO, fontSize: 10, color: C.amber }}>★ {lead.rating} ({lead.reviews})</div>}
+        {fu && <div style={{ fontFamily: MONO, fontSize: 9, color: fu.color, marginTop: 3 }}>{fu.label}</div>}
+        {lead.notes && <div style={{ fontFamily: MONO, fontSize: 9, color: C.sub, marginTop: 3, fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.notes}</div>}
+      </div>
+
+      {isSelected && (
+        <div onClick={e => e.stopPropagation()} style={{ borderTop: `1px solid ${C.border}` }}>
+          {/* Contact + links */}
+          <div style={{ padding: "9px 13px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${C.border}` }}>
+            {lead.email && <span style={{ fontFamily: MONO, fontSize: 10, color: C.green }}>{lead.email}</span>}
+            {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || "Instagram"}</a>}
+            {lead.phone && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{lead.phone}</span>}
+            {lead.mapsUrl && <a href={lead.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.blue, textDecoration: "none" }}>Maps</a>}
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Added {new Date(lead.addedAt).toLocaleDateString()}</span>
+          </div>
+          {/* Status chips */}
+          <div style={{ padding: "8px 13px", display: "flex", gap: 4, flexWrap: "wrap", borderBottom: `1px solid ${C.border}` }}>
+            {Object.entries(STATUS).map(([id, st]) => (
+              <button key={id} onClick={() => onStatusChange(lead.id, id)}
+                style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: lead.status === id ? `${st.color}18` : "transparent", border: `1px solid ${lead.status === id ? st.color : C.border}`, color: lead.status === id ? st.color : C.muted }}>
+                {st.label}
+              </button>
+            ))}
+          </div>
+          {/* Actions */}
+          <div style={{ padding: "8px 13px", display: "flex", gap: 5, flexWrap: "wrap", borderBottom: `1px solid ${C.border}` }}>
+            <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>{lead.enriched ? "Re-enrich" : "Enrich"}</Btn>
+            <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel" : "Edit"}</Btn>
+            <Btn onClick={() => onRemove(lead.id)} color={C.red} sm>Remove</Btn>
+          </div>
+          {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
+          {!editing && <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} />}
+        </div>
+      )}
+    </div>
+  );
 }
 
-function followUpStatus(lead) {
-  if (!["contacted", "followup"].includes(lead.status)) return null;
-  if (!lead.contactedAt) return null;
-  const days = daysSince(lead.contactedAt);
-  if (days === null) return null;
-  if (lead.status === "contacted" && days >= 4) return { label: `${days}d - Follow-up due`,   color: C.amber, urgent: true  };
-  if (lead.status === "followup"  && days >= 4) return { label: `${days}d - Second bump due`, color: C.red,   urgent: true  };
-  if (lead.status === "contacted" && days >= 2) return { label: `${days}d - Sent`,            color: C.blue,  urgent: false };
-  return { label: `${days}d since contact`, color: C.muted, urgent: false };
+// --- PIPELINE GRID GROUP -----------------------------------------------------
+function PipelineGridGroup({ title, color, leads, onUpdate, onRemove, onStatusChange, defaultOpen = false, urgentBorder = false }) {
+  const [selectedId, setSelectedId] = useState(null);
+
+  function handleSelect(id) {
+    setSelectedId(prev => prev === id ? null : id);
+  }
+
+  if (leads.length === 0) return null;
+
+  return (
+    <Section title={title} color={color} count={leads.length} defaultOpen={defaultOpen} urgentBorder={urgentBorder}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 7 }}>
+        {leads.map(l => (
+          <PipelineGridCard
+            key={l.id}
+            lead={l}
+            onUpdate={onUpdate}
+            onRemove={onRemove}
+            onStatusChange={onStatusChange}
+            isSelected={selectedId === l.id}
+            onSelect={() => handleSelect(l.id)}
+          />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+// --- ADD LEAD MODAL ----------------------------------------------------------
+function AddLeadModal({ onAdd, onClose }) {
+  const BLANK = { name: "", city: "", category: "", phone: "", email: "", instagramHandle: "", website: "", grade: "", notes: "" };
+  const [form, setForm] = useState(BLANK);
+
+  function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
+
+  function submit() {
+    if (!form.name.trim()) return;
+    const handle = form.instagramHandle.replace(/^@/, "");
+    const lead = {
+      id: `${Date.now()}-${Math.random()}`,
+      status: "new",
+      addedAt: new Date().toISOString(),
+      contactedAt: null,
+      manuallyAdded: true,
+      name: form.name.trim(),
+      city: form.city.trim(),
+      category: form.category.trim(),
+      phone: form.phone.trim() || null,
+      email: form.email.trim() || null,
+      instagramHandle: handle ? `@${handle}` : null,
+      instagram: handle ? `https://www.instagram.com/${handle}/` : null,
+      website: form.website.trim() || null,
+      hasWebsite: !!(form.website.trim()),
+      grade: form.grade || null,
+      notes: form.notes.trim(),
+      enriched: !!(form.email.trim() || handle),
+    };
+    onAdd(lead);
+    onClose();
+  }
+
+  const inputStyle = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.4)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "8px 11px", fontFamily: MONO, fontSize: 12, color: C.text, outline: "none" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 14, padding: "26px 28px", width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Add Lead Manually</span>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: MONO, fontSize: 13 }}>x</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+          {[
+            { key: "name",            label: "Business Name *", placeholder: "ABC Plumbing Co." },
+            { key: "city",            label: "City",            placeholder: "Anaheim" },
+            { key: "category",        label: "Category",        placeholder: "HVAC, plumber..." },
+            { key: "phone",           label: "Phone",           placeholder: "(714) 555-0100" },
+            { key: "email",           label: "Email",           placeholder: "owner@biz.com" },
+            { key: "instagramHandle", label: "Instagram Handle", placeholder: "@handle" },
+          ].map(f => (
+            <div key={f.key}>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>{f.label}</p>
+              <input value={form[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} style={inputStyle} />
+            </div>
+          ))}
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Website</p>
+          <input value={form.website} onChange={e => set("website", e.target.value)} placeholder="https://..." style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Grade</p>
+          <div style={{ display: "flex", gap: 6 }}>
+            {["A","B","C","D"].map(g => (
+              <button key={g} onClick={() => set("grade", form.grade === g ? "" : g)}
+                style={{ fontFamily: MONO, fontSize: 11, padding: "5px 14px", borderRadius: 20, cursor: "pointer", background: form.grade === g ? `${GRADE_COLOR[g]}18` : "transparent", border: `1px solid ${form.grade === g ? GRADE_COLOR[g] : C.border}`, color: form.grade === g ? GRADE_COLOR[g] : C.muted }}>
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Notes</p>
+          <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} placeholder="Context, referral source, anything relevant"
+            style={{ ...inputStyle, resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn onClick={submit} disabled={!form.name.trim()} color={C.green}>Add to Pipeline</Btn>
+          <Btn onClick={onClose} color={C.muted}>Cancel</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- PIPELINE MODULE ----------------------------------------------------------
+function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
+  const [weekLog,      setWeekLog]      = useState({ dms: 0, emails: 0, today: { dms: 0, emails: 0 } });
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [filter,       setFilter]       = useState("all");
+  const [sortBy,       setSortBy]       = useState("addedAt");
+  const [sortDir,      setSortDir]      = useState("desc");
+
+  useEffect(() => { ensureAnalyticsLoaded().then(() => setWeekLog(getWeekLog())); }, []);
+
+  const followUps  = pipeline.filter(l => followUpStatus(l)?.urgent);
+  const warmLeads  = pipeline.filter(l => l.status === "warm");
+  const newLeads   = pipeline.filter(l => l.status === "new");
+  const contacted  = pipeline.filter(l => l.status === "contacted" && !followUpStatus(l)?.urgent);
+  const coldClosed = pipeline.filter(l => ["cold","closed"].includes(l.status));
+
+  function handleStatusChange(id, newStatus) {
+    const patch = { status: newStatus };
+    if (newStatus === "contacted" || newStatus === "followup") patch.contactedAt = new Date().toISOString();
+    onUpdate(id, patch);
+  }
+
+  function sortLeads(leads) {
+    return [...leads].sort((a, b) => {
+      let av, bv;
+      if (sortBy === "addedAt") { av = a.addedAt ? new Date(a.addedAt).getTime() : 0; bv = b.addedAt ? new Date(b.addedAt).getTime() : 0; }
+      else if (sortBy === "grade") { const o = { A:0,B:1,C:2,D:3 }; av = o[a.grade] ?? 9; bv = o[b.grade] ?? 9; }
+      else if (sortBy === "urgency") { av = followUpStatus(a)?.urgent ? 0 : 1; bv = followUpStatus(b)?.urgent ? 0 : 1; }
+      else { av = 0; bv = 0; }
+      return sortDir === "asc" ? av - bv : bv - av;
+    });
+  }
+
+  function toggleSort(field) {
+    if (sortBy === field) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortBy(field); setSortDir("desc"); }
+  }
+
+  const filteredAll = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
+  const visibleAll  = sortLeads(filteredAll);
+
+  const active    = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
+  const closedCt  = pipeline.filter(l => l.status === "closed").length;
+  const contactedCt = pipeline.filter(l => l.status !== "new").length;
+
+  const SORT_OPTIONS = [
+    { id: "addedAt",  label: "Added"   },
+    { id: "grade",    label: "Grade"   },
+    { id: "urgency",  label: "Urgent"  },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+      {/* Stat strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+        {[{ label: "Total", val: pipeline.length, color: C.sub }, { label: "Active", val: active, color: C.green }, { label: "Contacted", val: contactedCt, color: C.blue }, { label: "Closed", val: closedCt, color: C.purple }].map(s => (
+          <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px", textAlign: "center" }}>
+            <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 500, color: s.color, marginBottom: 2 }}>{s.val}</div>
+            <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Outreach log */}
+      <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <Label>Outreach log</Label>
+          <div style={{ display: "flex", gap: 20 }}>
+            {[{ val: weekLog.today.dms, label: "DMs today", color: C.purple }, { val: weekLog.today.emails, label: "Emails today", color: C.green }, { val: weekLog.dms + weekLog.emails, label: "This week", color: C.blue }].map(s => (
+              <div key={s.label}>
+                <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: s.color }}>{s.val}</span>
+                <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: 6 }}>{s.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn onClick={() => { logOutreach("dms");    setWeekLog(getWeekLog()); }} color={C.purple} sm>+ DM Sent</Btn>
+          <Btn onClick={() => { logOutreach("emails"); setWeekLog(getWeekLog()); }} color={C.green}  sm>+ Email Sent</Btn>
+          <Btn onClick={() => setShowAddModal(true)} color={C.green} sm>+ Add Lead</Btn>
+        </div>
+      </div>
+
+      {showAddModal && <AddLeadModal onAdd={lead => { onAdd(lead); }} onClose={() => setShowAddModal(false)} />}
+
+      {pipeline.length === 0 ? (
+        <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "20px", textAlign: "center" }}>
+          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No leads yet — search in Leads or hit + Add Lead</p>
+        </div>
+      ) : (
+        <>
+          {/* Follow-ups due — always open */}
+          {followUps.length > 0 && (
+            <PipelineGridGroup
+              title={`Follow-ups due`}
+              color={C.red}
+              leads={sortLeads(followUps)}
+              onUpdate={onUpdate}
+              onRemove={onRemove}
+              onStatusChange={handleStatusChange}
+              defaultOpen={true}
+              urgentBorder={true}
+            />
+          )}
+
+          {/* Warm leads */}
+          {warmLeads.length > 0 && (
+            <PipelineGridGroup
+              title="Warm leads"
+              color={C.green}
+              leads={sortLeads(warmLeads)}
+              onUpdate={onUpdate}
+              onRemove={onRemove}
+              onStatusChange={handleStatusChange}
+              defaultOpen={true}
+            />
+          )}
+
+          {/* New leads */}
+          {newLeads.length > 0 && (
+            <PipelineGridGroup
+              title="New"
+              color={C.muted}
+              leads={sortLeads(newLeads)}
+              onUpdate={onUpdate}
+              onRemove={onRemove}
+              onStatusChange={handleStatusChange}
+              defaultOpen={false}
+            />
+          )}
+
+          {/* In contact (not urgent) */}
+          {contacted.length > 0 && (
+            <PipelineGridGroup
+              title="In contact"
+              color={C.blue}
+              leads={sortLeads(contacted)}
+              onUpdate={onUpdate}
+              onRemove={onRemove}
+              onStatusChange={handleStatusChange}
+              defaultOpen={false}
+            />
+          )}
+
+          {/* Cold / closed */}
+          {coldClosed.length > 0 && (
+            <PipelineGridGroup
+              title="Cold / closed"
+              color={C.muted}
+              leads={sortLeads(coldClosed)}
+              onUpdate={onUpdate}
+              onRemove={onRemove}
+              onStatusChange={handleStatusChange}
+              defaultOpen={false}
+            />
+          )}
+
+          {/* All leads with filter/sort */}
+          <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "12px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", flexShrink: 0 }}>Filter</span>
+              {[{ id: "all", label: `All (${pipeline.length})` }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: `${s.label} (${pipeline.filter(l => l.status === id).length})` }))].map(f => (
+                <button key={f.id} onClick={() => setFilter(f.id)}
+                  style={{ fontFamily: MONO, fontSize: 9, padding: "3px 10px", borderRadius: 20, cursor: "pointer", background: filter === f.id ? `${C.green}14` : "transparent", border: `1px solid ${filter === f.id ? C.green : C.border}`, color: filter === f.id ? C.green : C.muted }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", flexShrink: 0 }}>Sort</span>
+              {SORT_OPTIONS.map(opt => (
+                <button key={opt.id} onClick={() => toggleSort(opt.id)}
+                  style={{ fontFamily: MONO, fontSize: 9, padding: "3px 10px", borderRadius: 20, cursor: "pointer", background: sortBy === opt.id ? `${C.blue}14` : "transparent", border: `1px solid ${sortBy === opt.id ? C.blue : C.border}`, color: sortBy === opt.id ? C.blue : C.muted }}>
+                  {opt.label}{sortBy === opt.id ? (sortDir === "asc" ? " ^" : " v") : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {visibleAll.length > 0 && (
+            <PipelineGridGroup
+              title={`All leads (${visibleAll.length})`}
+              color={C.muted}
+              leads={visibleAll}
+              onUpdate={onUpdate}
+              onRemove={onRemove}
+              onStatusChange={handleStatusChange}
+              defaultOpen={false}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// --- PROPOSAL MODULE ----------------------------------------------------------
+function ProposalModule() {
+  const BLANK = { businessName: "", contactName: "", scope: [], scopeNotes: "", timeline: "1 week", carePlan: false, careRate: "200" };
+  const [form,     setForm]     = useState(BLANK);
+  const [proposal, setProposal] = useState(null);
+  const [loading,  setLoading]  = useState(false);
+  const [copied,   setCopied]   = useState(false);
+
+  const SCOPE_OPTIONS = [
+    { id: "new_site",  label: "New Website Build" },
+    { id: "redesign",  label: "Redesign / Migration" },
+    { id: "care_plan", label: "Monthly Care Plan" },
+    { id: "seo",       label: "SEO Setup" },
+    { id: "booking",   label: "Booking Integration" },
+  ];
+
+  const TIMELINE_OPTIONS = ["As little as 1 week", "2 weeks", "2-3 weeks", "3-4 weeks", "TBD - scope dependent"];
+
+  function toggleScope(id) {
+    setForm(f => ({ ...f, scope: f.scope.includes(id) ? f.scope.filter(s => s !== id) : [...f.scope, id] }));
+  }
+
+  async function generate() {
+    if (!form.businessName.trim() || form.scope.length === 0) return;
+    setLoading(true); setProposal(null);
+
+    const scopeLabels = form.scope.map(id => SCOPE_OPTIONS.find(o => o.id === id)?.label).filter(Boolean).join(", ");
+    const pricing = form.scope.includes("new_site") && form.scope.includes("care_plan")
+      ? "$750 build + $200/month care plan"
+      : form.scope.includes("redesign") && form.scope.includes("care_plan")
+        ? "Redesign (scope-based) + $200/month care plan"
+        : form.scope.includes("new_site")
+          ? "$500 one-time build"
+          : form.scope.includes("care_plan")
+            ? `$${form.careRate}/month care plan`
+            : "Scope-based pricing";
+
+    const raw = await ai(
+      RWS_CTX + `\n\nWrite a professional web design proposal. Return ONLY valid JSON, no backticks:
+{"subject":"Email subject line","greeting":"Short personalized opener, 1-2 sentences","overview":"2-3 sentences describing what RWS will deliver and why it matters for their business specifically","scopeItems":["Array of 4-6 specific deliverable bullets based on scope selected"],"timeline":"1-2 sentence timeline commitment","investment":"1-2 sentences on pricing and payment terms (50% upfront, 50% on launch)","nextSteps":"2-3 sentences on how to proceed - sign agreement, pay deposit, then Trafton handles the rest","closing":"One confident closing sentence"}`,
+      `Client: ${form.businessName}${form.contactName ? ` (Contact: ${form.contactName})` : ""} | Scope: ${scopeLabels} | Timeline: ${form.timeline} | Pricing: ${pricing}${form.scopeNotes ? ` | Notes: ${form.scopeNotes}` : ""}`
+    );
+
+    try {
+      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      setProposal(parsed);
+    } catch { setProposal(null); }
+    setLoading(false);
+  }
+
+  function buildPlainText() {
+    if (!proposal) return "";
+    const scopeList = (proposal.scopeItems || []).map(item => `  - ${item}`).join("\n");
+    return `Subject: ${proposal.subject}\n\n${proposal.greeting}\n\n${proposal.overview}\n\nSCOPE OF WORK\n${scopeList}\n\nTIMELINE\n${proposal.timeline}\n\nINVESTMENT\n${proposal.investment}\n\nNEXT STEPS\n${proposal.nextSteps}\n\n${proposal.closing}\n\nTrafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
+  }
+
+  function copyProposal() {
+    navigator.clipboard?.writeText(buildPlainText());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const inputStyle = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 8, padding: "10px 13px", fontFamily: MONO, fontSize: 12, color: C.text, outline: "none" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <Dot color={C.teal} />
+          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Proposal Generator</span>
+          <Pill color={C.teal} sm>AI-Drafted</Pill>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <div><Label>Business Name</Label><input value={form.businessName} onChange={e => setForm(f => ({ ...f, businessName: e.target.value }))} placeholder="ABC Plumbing Co." style={inputStyle} /></div>
+          <div><Label>Contact Name</Label><input value={form.contactName} onChange={e => setForm(f => ({ ...f, contactName: e.target.value }))} placeholder="Optional — owner name" style={inputStyle} /></div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <Label>Scope of Work</Label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {SCOPE_OPTIONS.map(opt => (
+              <button key={opt.id} onClick={() => toggleScope(opt.id)}
+                style={{ fontFamily: MONO, fontSize: 10, padding: "6px 14px", borderRadius: 20, cursor: "pointer", background: form.scope.includes(opt.id) ? `${C.teal}18` : "transparent", border: `1px solid ${form.scope.includes(opt.id) ? C.teal : C.border}`, color: form.scope.includes(opt.id) ? C.teal : C.muted, transition: "all 0.15s" }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {form.scope.includes("care_plan") && (
+          <div style={{ marginBottom: 16 }}>
+            <Label>Care Plan Rate ($/mo)</Label>
+            <input value={form.careRate} onChange={e => setForm(f => ({ ...f, careRate: e.target.value }))} placeholder="200" style={{ ...inputStyle, width: 140 }} />
+          </div>
+        )}
+        <div style={{ marginBottom: 16 }}>
+          <Label>Timeline</Label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {TIMELINE_OPTIONS.map(t => (
+              <button key={t} onClick={() => setForm(f => ({ ...f, timeline: t }))}
+                style={{ fontFamily: MONO, fontSize: 10, padding: "6px 14px", borderRadius: 20, cursor: "pointer", background: form.timeline === t ? `${C.teal}18` : "transparent", border: `1px solid ${form.timeline === t ? C.teal : C.border}`, color: form.timeline === t ? C.teal : C.muted }}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <Label>Additional Context (optional)</Label>
+          <textarea value={form.scopeNotes} onChange={e => setForm(f => ({ ...f, scopeNotes: e.target.value }))} rows={2} placeholder="e.g. They have a Wix site they hate, want booking integration"
+            style={{ ...inputStyle, resize: "vertical" }} />
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <Btn onClick={generate} loading={loading} disabled={!form.businessName.trim() || form.scope.length === 0} color={C.teal}>Generate Proposal</Btn>
+          {proposal && <Btn onClick={() => { setProposal(null); setForm(BLANK); }} color={C.muted} sm>Reset</Btn>}
+        </div>
+      </Card>
+
+      {loading && <Card><p style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Drafting proposal...</span></p></Card>}
+
+      {proposal && (
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Dot color={C.teal} />
+              <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Proposal — {form.businessName}</span>
+            </div>
+            <Btn onClick={copyProposal} color={copied ? C.green : C.muted} sm>{copied ? "Copied" : "Copy Plain Text"}</Btn>
+          </div>
+          <div style={{ padding: "10px 14px", background: `${C.teal}08`, borderRadius: 8, border: `1px solid ${C.teal}20`, marginBottom: 16 }}>
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, letterSpacing: "0.1em" }}>SUBJECT  </span>
+            <span style={{ fontFamily: MONO, fontSize: 11, color: C.text }}>{proposal.subject}</span>
+          </div>
+          {[{ label: "Opening", content: proposal.greeting }, { label: "Overview", content: proposal.overview }].map(s => s.content && (
+            <div key={s.label} style={{ marginBottom: 16 }}>
+              <Label>{s.label}</Label>
+              <p style={{ fontFamily: BODY, fontSize: 13, lineHeight: 1.75, color: C.sub, margin: 0 }}>{s.content}</p>
+            </div>
+          ))}
+          <div style={{ marginBottom: 16 }}>
+            <Label>Scope of Work</Label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {(proposal.scopeItems || []).map((item, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, flexShrink: 0, marginTop: 2 }}>—</span>
+                  <span style={{ fontFamily: BODY, fontSize: 13, color: C.sub, lineHeight: 1.6 }}>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {[{ label: "Timeline", content: proposal.timeline }, { label: "Investment", content: proposal.investment }, { label: "Next Steps", content: proposal.nextSteps }, { label: "Closing", content: proposal.closing }].map(s => s.content && (
+            <div key={s.label} style={{ marginBottom: 16 }}>
+              <Label>{s.label}</Label>
+              <p style={{ fontFamily: BODY, fontSize: 13, lineHeight: 1.75, color: C.sub, margin: 0 }}>{s.content}</p>
+            </div>
+          ))}
+          <div style={{ padding: "10px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 8, border: `1px solid ${C.border}` }}>
+            <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com</span>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// --- CLIENT TRACKER -----------------------------------------------------------
+function ClientTracker() {
+  const [clients,   setClientsRaw] = useState([]);
+  const [loaded,    setLoaded]     = useState(false);
+  const [adding,    setAdding]     = useState(false);
+  const [editingId, setEditingId]  = useState(null);
+  const BLANK_CLIENT = { name: "", siteUrl: "", carePlan: false, careRate: "", launchedAt: "", lastCheckIn: "", nextInvoice: "", notes: "" };
+  const [form, setForm] = useState(BLANK_CLIENT);
+
+  useEffect(() => { loadClients().then(c => { setClientsRaw(c); setLoaded(true); }); }, []);
+
+  function save(updated) { setClientsRaw(updated); saveClients(updated); }
+  function addClient() {
+    if (!form.name.trim()) return;
+    save([...clients, { id: `${Date.now()}-${Math.random()}`, ...form, addedAt: new Date().toISOString() }]);
+    setForm(BLANK_CLIENT); setAdding(false);
+  }
+  function updateClient(id, patch) { save(clients.map(c => c.id === id ? { ...c, ...patch } : c)); }
+  function removeClient(id)        { save(clients.filter(c => c.id !== id)); }
+
+  function daysSinceCheckIn(client) {
+    if (!client.lastCheckIn) return null;
+    const ts = Date.parse(client.lastCheckIn);
+    if (isNaN(ts)) return null;
+    return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
+  }
+  function checkInOverdue(client) { const days = daysSinceCheckIn(client); return days !== null && days >= 30; }
+
+  const overdueClients = clients.filter(checkInOverdue);
+  const inputStyle = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "8px 11px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" };
+
+  if (!loaded) return <Card><p style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Loading clients...</span></p></Card>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {overdueClients.length > 0 && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <Dot color={C.amber} pulse />
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, letterSpacing: "0.12em", textTransform: "uppercase" }}>Check-in overdue ({overdueClients.length})</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {overdueClients.map(c => {
+              const days = daysSinceCheckIn(c);
+              return (
+                <div key={c.id} style={{ background: `${C.amber}08`, border: `1px solid ${C.amber}30`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{c.name}</span>
+                    {c.siteUrl && <a href={c.siteUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.blue, marginLeft: 10, textDecoration: "none" }}>{c.siteUrl.replace(/https?:\/\//, "")}</a>}
+                    <p style={{ fontFamily: MONO, fontSize: 10, color: C.amber, margin: "3px 0 0" }}>{days}d since last check-in</p>
+                  </div>
+                  <Btn sm color={C.green} onClick={() => updateClient(c.id, { lastCheckIn: new Date().toISOString() })}>Mark Checked In</Btn>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Dot color={C.teal} />
+            <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Clients</span>
+            <Pill color={C.teal} sm>{clients.length} active</Pill>
+          </div>
+          <Btn onClick={() => setAdding(a => !a)} color={C.teal} sm>{adding ? "Cancel" : "+ Add Client"}</Btn>
+        </div>
+        {adding && (
+          <div style={{ background: `${C.teal}06`, border: `1px solid ${C.teal}20`, borderRadius: 10, padding: "16px", marginBottom: 20 }}>
+            <Label>New Client</Label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              {[{ key: "name", label: "Business Name", placeholder: "ABC Plumbing Co." }, { key: "siteUrl", label: "Site URL", placeholder: "https://..." }, { key: "launchedAt", label: "Launch Date", placeholder: "YYYY-MM-DD" }, { key: "nextInvoice", label: "Next Invoice", placeholder: "YYYY-MM-DD" }].map(f => (
+                <div key={f.key}>
+                  <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>{f.label}</p>
+                  <input value={form[f.key]} onChange={e => setForm(f2 => ({ ...f2, [f.key]: e.target.value }))} placeholder={f.placeholder} style={inputStyle} />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={form.carePlan} onChange={e => setForm(f => ({ ...f, carePlan: e.target.checked }))} />
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.text }}>Care Plan Active</span>
+              </label>
+              {form.carePlan && <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>$/mo</span>
+                <input value={form.careRate} onChange={e => setForm(f => ({ ...f, careRate: e.target.value }))} placeholder="200" style={{ ...inputStyle, width: 80 }} />
+              </div>}
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Notes</p>
+              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...inputStyle, resize: "vertical" }} />
+            </div>
+            <Btn onClick={addClient} disabled={!form.name.trim()} color={C.teal} sm>Save Client</Btn>
+          </div>
+        )}
+        {clients.length === 0
+          ? <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No clients yet.</p>
+          : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {clients.map(c => {
+                const isEditing = editingId === c.id;
+                const days = daysSinceCheckIn(c);
+                const overdue = checkInOverdue(c);
+                return (
+                  <div key={c.id} style={{ background: C.cardHi, border: `1px solid ${overdue ? C.amber + "40" : C.border}`, borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ padding: "14px 16px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 700, color: C.text }}>{c.name}</span>
+                          {c.carePlan && <Pill color={C.green} sm>Care Plan {c.careRate ? `$${c.careRate}/mo` : ""}</Pill>}
+                          {overdue && <Pill color={C.amber} sm>Check-in overdue</Pill>}
+                        </div>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 4 }}>
+                          {c.siteUrl && <a href={c.siteUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>{c.siteUrl.replace(/https?:\/\//, "")}</a>}
+                          {c.launchedAt && <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Launched {c.launchedAt}</span>}
+                          {c.nextInvoice && <span style={{ fontFamily: MONO, fontSize: 10, color: C.purple }}>Invoice {c.nextInvoice}</span>}
+                        </div>
+                        {days !== null && <span style={{ fontFamily: MONO, fontSize: 10, color: overdue ? C.amber : C.muted }}>{days === 0 ? "Checked in today" : `Last check-in: ${days}d ago`}</span>}
+                        {c.notes && <p style={{ fontFamily: MONO, fontSize: 10, color: C.sub, margin: "4px 0 0", fontStyle: "italic" }}>{c.notes}</p>}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-end" }}>
+                        <Btn onClick={() => updateClient(c.id, { lastCheckIn: new Date().toISOString() })} color={C.green} sm>Check In</Btn>
+                        <Btn onClick={() => setEditingId(isEditing ? null : c.id)} color={C.purple} sm>{isEditing ? "Cancel" : "Edit"}</Btn>
+                        <Btn onClick={() => removeClient(c.id)} color={C.red} sm>Remove</Btn>
+                      </div>
+                    </div>
+                    {isEditing && (
+                      <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", background: "rgba(171,71,188,0.04)" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                          {[{ key: "name", label: "Business Name" }, { key: "siteUrl", label: "Site URL" }, { key: "launchedAt", label: "Launch Date" }, { key: "nextInvoice", label: "Next Invoice" }].map(f => (
+                            <div key={f.key}>
+                              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>{f.label}</p>
+                              <input defaultValue={c[f.key] || ""} onBlur={e => updateClient(c.id, { [f.key]: e.target.value })} style={inputStyle} />
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                            <input type="checkbox" checked={c.carePlan} onChange={e => updateClient(c.id, { carePlan: e.target.checked })} />
+                            <span style={{ fontFamily: MONO, fontSize: 11, color: C.text }}>Care Plan Active</span>
+                          </label>
+                          {c.carePlan && <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>$/mo</span>
+                            <input defaultValue={c.careRate || ""} onBlur={e => updateClient(c.id, { careRate: e.target.value })} style={{ ...inputStyle, width: 80 }} />
+                          </div>}
+                        </div>
+                        <div>
+                          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Notes</p>
+                          <textarea defaultValue={c.notes || ""} onBlur={e => updateClient(c.id, { notes: e.target.value })} rows={2} style={{ ...inputStyle, resize: "vertical" }} />
+                        </div>
+                        <div style={{ marginTop: 10 }}><Btn onClick={() => setEditingId(null)} color={C.green} sm>Done</Btn></div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+        }
+      </Card>
+    </div>
+  );
+}
+
+// --- HASHTAG MODULE -----------------------------------------------------------
+function HashtagModule() {
+  const TAGS = {
+    location: ["#orangecounty","#orangecountyca","#anaheim","#socalbusiness","#southerncalifornia","#oclocal","#inlandempire","#losangelesbusiness"],
+    business: ["#smallbusinessowner","#localbusiness","#smallbusiness","#independentbusiness","#solopreneur","#businessowner","#entrepreneurs"],
+    niche: ["#nailtech","#nailbusiness","#handyman","#handymanservices","#contractorbusiness","#independentmotel","#hospitalitybusiness","#tradesbusiness","#servicebusiness"],
+    web: ["#webdesign","#websitedesign","#webdesigner","#smallbusinesswebsite","#websitedesignorangecounty","#webdesignorangecounty","#localseo","#digitalmarketing","#onlinepresence"],
+    pain: ["#getfoundgoogle","#needawebsite","#nowebsite","#growyourbusiness","#getmorecustomers","#morereviews","#bookmoreclients"],
+    community: ["#ocbusiness","#orangecountybusiness","#orangecountyentrepreneur","#supportlocal","#shoplocal","#ocsmallbusiness"],
+  };
+  const NICHE_OPTIONS = [
+    { id: "any", label: "Any / General" }, { id: "nail", label: "Nail Tech" },
+    { id: "handyman", label: "Handyman" }, { id: "motel", label: "Motel / Hospitality" },
+    { id: "trades", label: "Trades" }, { id: "cleaning", label: "Cleaning / Landscaping" },
+  ];
+  const NICHE_TAG_MAP = {
+    nail: ["#nailtech","#nailbusiness"], handyman: ["#handyman","#handymanservices"],
+    motel: ["#independentmotel","#hospitalitybusiness"], trades: ["#contractorbusiness","#tradesbusiness"],
+    cleaning: ["#servicebusiness","#tradesbusiness"], any: ["#servicebusiness","#smallbusinessowner"],
+  };
+
+  const [niche,     setNiche]     = useState("any");
+  const [generated, setGenerated] = useState(null);
+  const [history,   setHistory]   = useState([]);
+  const [copied,    setCopied]    = useState(false);
+
+  function pick(arr, n, exclude = []) {
+    return [...arr.filter(t => !exclude.includes(t))].sort(() => Math.random() - 0.5).slice(0, n);
+  }
+
+  function generate() {
+    const lastSet   = history[history.length - 1] || [];
+    const nichetags = NICHE_TAG_MAP[niche] || NICHE_TAG_MAP.any;
+    const set = [...pick(TAGS.location,3,lastSet), ...nichetags, ...pick(TAGS.web,2,lastSet), ...pick(TAGS.pain,2,lastSet), ...pick(TAGS.community,1,lastSet)];
+    setGenerated(set);
+    setHistory(h => [...h.slice(-9), set]);
+    setCopied(false);
+  }
+
+  function tagCategory(tag) {
+    const nicheTagSet = new Set(NICHE_TAG_MAP[niche] || []);
+    if (TAGS.location.includes(tag))  return C.blue;
+    if (nicheTagSet.has(tag))         return C.green;
+    if (TAGS.web.includes(tag))       return C.purple;
+    if (TAGS.pain.includes(tag))      return C.amber;
+    if (TAGS.community.includes(tag)) return C.teal;
+    return C.muted;
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <Dot color={C.purple} />
+          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Hashtag Generator</span>
+          <Pill color={C.purple} sm>Instagram</Pill>
+        </div>
+        <Label>Post Niche</Label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
+          {NICHE_OPTIONS.map(o => (
+            <button key={o.id} onClick={() => setNiche(o.id)}
+              style={{ fontFamily: MONO, fontSize: 10, padding: "5px 13px", borderRadius: 20, cursor: "pointer", background: niche === o.id ? `${C.purple}18` : "transparent", border: `1px solid ${niche === o.id ? C.purple : C.border}`, color: niche === o.id ? C.purple : C.muted }}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <Btn onClick={generate} color={C.purple}>Generate Set</Btn>
+          {generated && <Btn onClick={generate} color={C.muted} sm>Regenerate</Btn>}
+          {generated && <Btn onClick={() => { navigator.clipboard?.writeText(generated.join(" ")); setCopied(true); setTimeout(() => setCopied(false), 2000); }} color={copied ? C.green : C.muted} sm>{copied ? "Copied" : "Copy All"}</Btn>}
+        </div>
+        {generated && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "16px", background: "rgba(0,0,0,0.25)", borderRadius: 10, border: `1px solid ${C.border}` }}>
+            {generated.map(tag => {
+              const color = tagCategory(tag);
+              return (
+                <span key={tag} onClick={() => navigator.clipboard?.writeText(tag)}
+                  style={{ fontFamily: MONO, fontSize: 11, color, background: `${color}12`, border: `1px solid ${color}30`, borderRadius: 20, padding: "3px 10px", cursor: "pointer" }}>
+                  {tag}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
 }
 
 // --- ANALYTICS MODULE ---------------------------------------------------------
@@ -1348,12 +2053,6 @@ function AnalyticsModule({ pipeline }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {(pipeline.length < 3 || activeDays < 2) && (
-        <div style={{ background: `${C.amber}08`, border: `1px solid ${C.amber}25`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-          <Dot color={C.amber} size={6} />
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber }}>Early data - trends get meaningful at 30+ days and 10+ leads.</span>
-        </div>
-      )}
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}><Dot color={C.green} /><span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Pipeline Funnel</span></div>
         {total === 0 ? <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No pipeline leads yet.</p> : (
@@ -1368,7 +2067,7 @@ function AnalyticsModule({ pipeline }) {
               ))}
             </div>
             <Label>Status Breakdown</Label>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
               {Object.entries(STATUS).map(([id, st]) => {
                 const count = statusCounts[id] || 0;
                 const pct   = total ? (count / total) * 100 : 0;
@@ -1383,7 +2082,6 @@ function AnalyticsModule({ pipeline }) {
                 );
               })}
             </div>
-            <Divider />
             <Label>Pipeline Grade Mix</Label>
             <div style={{ display: "flex", gap: 8 }}>
               {Object.entries(gradeMap).map(([g, count]) => (
@@ -1409,7 +2107,7 @@ function AnalyticsModule({ pipeline }) {
           </div>
         </div>
         {totalDMs + totalEmails === 0
-          ? <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No outreach logged yet. DMs and emails are tracked when you copy or send from Pipeline.</p>
+          ? <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No outreach logged yet.</p>
           : <>
               <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 60, marginBottom: 8 }}>
                 {outreachDays.map((d, i) => {
@@ -1427,477 +2125,22 @@ function AnalyticsModule({ pipeline }) {
             </>
         }
       </Card>
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}><Dot color={C.amber} /><span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Niche Performance</span></div>
-        {nicheRows.length === 0
-          ? <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No searches logged yet.</p>
-          : <div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "0 0 8px", borderBottom: `1px solid ${C.border}`, marginBottom: 8 }}>
-                {["Niche + Location","Searches","A Leads","B Leads","Avg A"].map(h => <span key={h} style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: h === "Niche + Location" ? "left" : "right" }}>{h}</span>)}
-              </div>
-              {nicheRows.map((row, i) => (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.query}</span>
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub,   textAlign: "right" }}>{row.searches}</span>
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.green, textAlign: "right" }}>{row.aTotal}</span>
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, textAlign: "right" }}>{row.bTotal}</span>
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.blue,  textAlign: "right" }}>{row.avgA}</span>
-                </div>
-              ))}
-            </div>
-        }
-      </Card>
-    </div>
-  );
-}
-
-// --- PIPELINE MODULE ----------------------------------------------------------
-function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
-  const [filter,           setFilter]           = useState("all");
-  const [weekLog,          setWeekLog]          = useState({ dms: 0, emails: 0, today: { dms: 0, emails: 0 } });
-  const [expandedFollowUp, setExpandedFollowUp] = useState(null);
-  const [sortBy,           setSortBy]           = useState("addedAt");
-  const [sortDir,          setSortDir]          = useState("desc");
-  const [viewMode,         setViewMode]         = useState("list");
-  const [showAddModal,     setShowAddModal]     = useState(false);
-
-  useEffect(() => { ensureAnalyticsLoaded().then(() => setWeekLog(getWeekLog())); }, []);
-
-  const active    = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
-  const closed    = pipeline.filter(l => l.status === "closed").length;
-  const contacted = pipeline.filter(l => l.status !== "new").length;
-  const followUps = pipeline.filter(l => followUpStatus(l)?.urgent);
-
-  function handleStatusChange(id, newStatus) {
-    const patch = { status: newStatus };
-    if (newStatus === "contacted" || newStatus === "followup") patch.contactedAt = new Date().toISOString();
-    onUpdate(id, patch);
-  }
-
-  function sortLeads(leads) {
-    return [...leads].sort((a, b) => {
-      let av, bv;
-      if (sortBy === "addedAt") {
-        av = a.addedAt ? new Date(a.addedAt).getTime() : 0;
-        bv = b.addedAt ? new Date(b.addedAt).getTime() : 0;
-      } else if (sortBy === "lastContact") {
-        av = a.contactedAt ? new Date(a.contactedAt).getTime() : 0;
-        bv = b.contactedAt ? new Date(b.contactedAt).getTime() : 0;
-      } else if (sortBy === "grade") {
-        const order = { A: 0, B: 1, C: 2, D: 3 };
-        av = order[a.grade] ?? 9;
-        bv = order[b.grade] ?? 9;
-      } else if (sortBy === "type") {
-        av = a.category || "";
-        bv = b.category || "";
-        return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-      } else if (sortBy === "urgency") {
-        av = followUpStatus(a)?.urgent ? 0 : 1;
-        bv = followUpStatus(b)?.urgent ? 0 : 1;
-      } else { av = 0; bv = 0; }
-      return sortDir === "asc" ? av - bv : bv - av;
-    });
-  }
-
-  function toggleSort(field) {
-    if (sortBy === field) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortBy(field); setSortDir("desc"); }
-  }
-
-  const filtered = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
-  const visible  = sortLeads(filtered);
-
-  function KanbanView() {
-    const KANBAN_COLS = [
-      { ids: ["new"],                  label: "New",        color: C.muted  },
-      { ids: ["contacted","followup"], label: "In Contact", color: C.blue   },
-      { ids: ["warm"],                 label: "Warm",       color: C.green  },
-    ];
-    return (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
-        {KANBAN_COLS.map(col => {
-          const colLeads = sortLeads(pipeline.filter(l => col.ids.includes(l.status)));
-          return (
-            <div key={col.label}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
-                <Dot color={col.color} size={6} />
-                <span style={{ fontFamily: MONO, fontSize: 10, color: col.color, textTransform: "uppercase", letterSpacing: "0.1em" }}>{col.label}</span>
-                <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>({colLeads.length})</span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {colLeads.length === 0
-                  ? <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px" }}>
-                      <p style={{ fontFamily: MONO, fontSize: 10, color: "rgba(255,255,255,0.12)", margin: 0, textAlign: "center" }}>Empty</p>
-                    </div>
-                  : colLeads.map(l => {
-                      const fu = followUpStatus(l);
-                      const gc = GRADE_COLOR[l.grade] || C.muted;
-                      return (
-                        <div key={l.id} style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : C.border}`, borderRadius: 8, padding: "10px 12px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, flexWrap: "wrap" }}>
-                            {fu?.urgent && <Dot color={l.status === "followup" ? C.red : C.amber} size={6} pulse />}
-                            <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{l.name}</span>
-                            {l.grade && <Pill color={gc} sm>Grade {l.grade}</Pill>}
-                          </div>
-                          {fu && <p style={{ fontFamily: MONO, fontSize: 10, color: fu.color, margin: "0 0 6px" }}>{fu.label}</p>}
-                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                            {Object.entries(STATUS).filter(([id]) => !col.ids.includes(id)).slice(0, 3).map(([id, st]) => (
-                              <button key={id} onClick={() => handleStatusChange(l.id, id)}
-                                style={{ fontFamily: MONO, fontSize: 9, padding: "2px 7px", borderRadius: 20, cursor: "pointer", background: "transparent", border: `1px solid ${C.border}`, color: C.muted }}>
-                               {'-> '}{st.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })
-                }
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  const SORT_OPTIONS = [
-    { id: "addedAt",     label: "Added"   },
-    { id: "lastContact", label: "Contact" },
-    { id: "grade",       label: "Grade"   },
-    { id: "type",        label: "Type"    },
-    { id: "urgency",     label: "Urgent"  },
-  ];
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-        {[{ label: "Total", val: pipeline.length, color: C.sub }, { label: "Active", val: active, color: C.green }, { label: "Contacted", val: contacted, color: C.blue }, { label: "Closed", val: closed, color: C.purple }].map(s => (
-          <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
-            <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 500, color: s.color, marginBottom: 3 }}>{s.val}</div>
-            <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.12em", textTransform: "uppercase" }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      <Card style={{ padding: "16px 20px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <Label>Outreach Log</Label>
-            <div style={{ display: "flex", gap: 20 }}>
-              {[{ val: weekLog.today.dms, label: "DMs today", color: C.purple }, { val: weekLog.today.emails, label: "Emails today", color: C.green }, { val: weekLog.dms + weekLog.emails, label: "This week", color: C.blue }].map(s => (
-                <div key={s.label}>
-                  <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 500, color: s.color }}>{s.val}</span>
-                  <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: 6 }}>{s.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn onClick={() => { logOutreach("dms");    setWeekLog(getWeekLog()); }} color={C.purple} sm>+ DM Sent</Btn>
-            <Btn onClick={() => { logOutreach("emails"); setWeekLog(getWeekLog()); }} color={C.green}  sm>+ Email Sent</Btn>
-          </div>
-        </div>
-      </Card>
-
-      {followUps.length > 0 && (
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <Dot color={C.red} pulse />
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.red, letterSpacing: "0.12em", textTransform: "uppercase" }}>Follow-up Due ({followUps.length})</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {followUps.map(l => {
-              const fu         = followUpStatus(l);
-              const isExpanded = expandedFollowUp === l.id;
-              return (
-                <div key={l.id} style={{ background: `${C.red}08`, border: `1px solid ${C.red}30`, borderRadius: 10, overflow: "hidden" }}>
-                  <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                        <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{l.name}</span>
-                        {l.instagram && <a href={l.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{l.instagramHandle || "IG"}</a>}
-                        {l.phone && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{l.phone}</span>}
-                      </div>
-                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>
-                        <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{l.status === "followup" ? "2 contacts sent" : "1 contact sent"}</span>
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <Btn sm color={C.amber} onClick={() => setExpandedFollowUp(isExpanded ? null : l.id)}>
-                        {isExpanded ? "Hide Copy" : "Get Follow-up Copy"}
-                      </Btn>
-                      <Btn sm color={C.amber} onClick={() => handleStatusChange(l.id, "followup")}>Mark Sent</Btn>
-                      <Btn sm color={C.green}  onClick={() => handleStatusChange(l.id, "warm")}>Mark Warm</Btn>
-                      <Btn sm color={C.red}    onClick={() => handleStatusChange(l.id, "cold")}>Mark Cold</Btn>
-                    </div>
-                  </div>
-                  {isExpanded && <CopyPanel prospect={l} onSend={() => handleStatusChange(l.id, "followup")} copyType={l.status === "followup" ? "secondbump" : "followup"} autoGenerate />}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <Card style={{ padding: "14px 18px" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", flexShrink: 0 }}>Filter</span>
-            {[{ id: "all", label: `All (${pipeline.length})` }, ...Object.entries(STATUS).map(([id, s]) => ({ id, label: `${s.label} (${pipeline.filter(l => l.status === id).length})` }))].map(f => (
-              <button key={f.id} onClick={() => setFilter(f.id)}
-                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: filter === f.id ? `${C.green}14` : "transparent", border: `1px solid ${filter === f.id ? C.green : C.border}`, color: filter === f.id ? C.green : C.muted }}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", flexShrink: 0 }}>Sort</span>
-            {SORT_OPTIONS.map(opt => (
-              <button key={opt.id} onClick={() => toggleSort(opt.id)}
-                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: sortBy === opt.id ? `${C.blue}14` : "transparent", border: `1px solid ${sortBy === opt.id ? C.blue : C.border}`, color: sortBy === opt.id ? C.blue : C.muted }}>
-                {opt.label}{sortBy === opt.id ? (sortDir === "asc" ? " ^" : " v") : ""}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", flexShrink: 0 }}>View</span>
-            {[{ id: "list", label: "List" }, { id: "compact", label: "Compact" }, { id: "kanban", label: "Kanban" }].map(v => (
-              <button key={v.id} onClick={() => setViewMode(v.id)}
-                style={{ fontFamily: MONO, fontSize: 10, padding: "4px 11px", borderRadius: 20, cursor: "pointer", background: viewMode === v.id ? `${C.amber}14` : "transparent", border: `1px solid ${viewMode === v.id ? C.amber : C.border}`, color: viewMode === v.id ? C.amber : C.muted }}>
-                {v.label}
-              </button>
-            ))}
-            <div style={{ marginLeft: "auto" }}>
-              <Btn onClick={() => setShowAddModal(true)} color={C.green} sm>+ Add Lead</Btn>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {showAddModal && <AddLeadModal onAdd={lead => { onAdd(lead); }} onClose={() => setShowAddModal(false)} />}
-
-      {pipeline.length === 0
-        ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads yet - search in Leads tab or hit + Add Lead</p></Card>
-        : viewMode === "kanban"
-          ? <KanbanView />
-          : visible.length === 0
-            ? <Card><p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", textAlign: "center", margin: 0 }}>No leads with this status</p></Card>
-            : <div style={{ display: "flex", flexDirection: "column", gap: viewMode === "compact" ? 6 : 10 }}>
-                {visible.map(l => <PipelineCard key={l.id} lead={l} onUpdate={updateLead} onRemove={removeLead} onStatusChange={handleStatusChange} compact={viewMode === "compact"} />)}
-              </div>
-      }
-    </div>
-  );
-
-  function updateLead(id, patch) { onUpdate(id, patch); }
-  function removeLead(id)        { onRemove(id); }
-}
-
-// --- PROPOSAL MODULE ----------------------------------------------------------
-function ProposalModule() {
-  const BLANK = { businessName: "", contactName: "", scope: [], scopeNotes: "", timeline: "1 week", carePlan: false, careRate: "200" };
-  const [form,     setForm]     = useState(BLANK);
-  const [proposal, setProposal] = useState(null);
-  const [loading,  setLoading]  = useState(false);
-  const [copied,   setCopied]   = useState(false);
-
-  const SCOPE_OPTIONS = [
-    { id: "new_site",   label: "New Website Build" },
-    { id: "redesign",   label: "Redesign / Migration" },
-    { id: "care_plan",  label: "Monthly Care Plan" },
-    { id: "seo",        label: "SEO Setup" },
-    { id: "booking",    label: "Booking Integration" },
-  ];
-
-  const TIMELINE_OPTIONS = ["As little as 1 week", "2 weeks", "2-3 weeks", "3-4 weeks", "TBD - scope dependent"];
-
-  function toggleScope(id) {
-    setForm(f => ({ ...f, scope: f.scope.includes(id) ? f.scope.filter(s => s !== id) : [...f.scope, id] }));
-  }
-
-  async function generate() {
-    if (!form.businessName.trim() || form.scope.length === 0) return;
-    setLoading(true); setProposal(null);
-
-    const scopeLabels = form.scope.map(id => SCOPE_OPTIONS.find(o => o.id === id)?.label).filter(Boolean).join(", ");
-    const pricing = form.scope.includes("new_site") && form.scope.includes("care_plan")
-      ? "$750 build + $200/month care plan"
-      : form.scope.includes("redesign") && form.scope.includes("care_plan")
-        ? "Redesign (scope-based) + $200/month care plan"
-        : form.scope.includes("new_site")
-          ? "$500 one-time build"
-          : form.scope.includes("care_plan")
-            ? `$${form.careRate}/month care plan`
-            : "Scope-based pricing";
-
-    const raw = await ai(
-      RWS_CTX + `\n\nWrite a professional web design proposal. Return ONLY valid JSON, no backticks:
-{"subject":"Email subject line","greeting":"Short personalized opener, 1-2 sentences","overview":"2-3 sentences describing what RWS will deliver and why it matters for their business specifically","scopeItems":["Array of 4-6 specific deliverable bullets based on scope selected"],"timeline":"1-2 sentence timeline commitment","investment":"1-2 sentences on pricing and payment terms (50% upfront, 50% on launch)","nextSteps":"2-3 sentences on how to proceed - sign agreement, pay deposit, then Trafton handles the rest","closing":"One confident closing sentence"}`,
-      `Client: ${form.businessName}${form.contactName ? ` (Contact: ${form.contactName})` : ""} | Scope: ${scopeLabels} | Timeline: ${form.timeline} | Pricing: ${pricing}${form.scopeNotes ? ` | Notes: ${form.scopeNotes}` : ""}`
-    );
-
-    try {
-      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
-      setProposal(parsed);
-    } catch { setProposal(null); }
-    setLoading(false);
-  }
-
-  function buildPlainText() {
-    if (!proposal) return "";
-    const scopeList = (proposal.scopeItems || []).map(item => `  - ${item}`).join("\n");
-    return `Subject: ${proposal.subject}
-
-${proposal.greeting}
-
-${proposal.overview}
-
-SCOPE OF WORK
-${scopeList}
-
-TIMELINE
-${proposal.timeline}
-
-INVESTMENT
-${proposal.investment}
-
-NEXT STEPS
-${proposal.nextSteps}
-
-${proposal.closing}
-
-Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
-  }
-
-  function copyProposal() {
-    navigator.clipboard?.writeText(buildPlainText());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  const inputStyle = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 8, padding: "10px 13px", fontFamily: MONO, fontSize: 12, color: C.text, outline: "none" };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-          <Dot color={C.teal} />
-          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Proposal Generator</span>
-          <Pill color={C.teal} sm>AI-Drafted</Pill>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-          <div>
-            <Label>Business Name</Label>
-            <input value={form.businessName} onChange={e => setForm(f => ({ ...f, businessName: e.target.value }))} placeholder="ABC Plumbing Co." style={inputStyle} />
-          </div>
-          <div>
-            <Label>Contact Name</Label>
-            <input value={form.contactName} onChange={e => setForm(f => ({ ...f, contactName: e.target.value }))} placeholder="Optional - owner name" style={inputStyle} />
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <Label>Scope of Work</Label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {SCOPE_OPTIONS.map(opt => (
-              <button key={opt.id} onClick={() => toggleScope(opt.id)}
-                style={{ fontFamily: MONO, fontSize: 10, padding: "6px 14px", borderRadius: 20, cursor: "pointer", background: form.scope.includes(opt.id) ? `${C.teal}18` : "transparent", border: `1px solid ${form.scope.includes(opt.id) ? C.teal : C.border}`, color: form.scope.includes(opt.id) ? C.teal : C.muted, transition: "all 0.15s" }}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {form.scope.includes("care_plan") && (
-          <div style={{ marginBottom: 16 }}>
-            <Label>Care Plan Rate ($/mo)</Label>
-            <input value={form.careRate} onChange={e => setForm(f => ({ ...f, careRate: e.target.value }))} placeholder="200" style={{ ...inputStyle, width: 140 }} />
-          </div>
-        )}
-
-        <div style={{ marginBottom: 16 }}>
-          <Label>Timeline</Label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {TIMELINE_OPTIONS.map(t => (
-              <button key={t} onClick={() => setForm(f => ({ ...f, timeline: t }))}
-                style={{ fontFamily: MONO, fontSize: 10, padding: "6px 14px", borderRadius: 20, cursor: "pointer", background: form.timeline === t ? `${C.teal}18` : "transparent", border: `1px solid ${form.timeline === t ? C.teal : C.border}`, color: form.timeline === t ? C.teal : C.muted }}>
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <Label>Additional Context (optional)</Label>
-          <textarea value={form.scopeNotes} onChange={e => setForm(f => ({ ...f, scopeNotes: e.target.value }))} rows={2} placeholder="e.g. They have a Wix site they hate, want booking integration, mentioned budget is flexible"
-            style={{ ...inputStyle, resize: "vertical" }} />
-        </div>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <Btn onClick={generate} loading={loading} disabled={!form.businessName.trim() || form.scope.length === 0} color={C.teal}>Generate Proposal</Btn>
-          {proposal && <Btn onClick={() => { setProposal(null); setForm(BLANK); }} color={C.muted} sm>Reset</Btn>}
-        </div>
-      </Card>
-
-      {loading && <Card><p style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Drafting proposal...</span></p></Card>}
-
-      {proposal && (
+      {nicheRows.length > 0 && (
         <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Dot color={C.teal} />
-              <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Proposal - {form.businessName}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}><Dot color={C.amber} /><span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Niche Performance</span></div>
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "0 0 8px", borderBottom: `1px solid ${C.border}`, marginBottom: 8 }}>
+              {["Niche + Location","Searches","A Leads","B Leads","Avg A"].map(h => <span key={h} style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: h === "Niche + Location" ? "left" : "right" }}>{h}</span>)}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn onClick={copyProposal} color={copied ? C.green : C.muted} sm>{copied ? "Copied" : "Copy Plain Text"}</Btn>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            <div style={{ padding: "10px 14px", background: `${C.teal}08`, borderRadius: 8, border: `1px solid ${C.teal}20`, marginBottom: 16 }}>
-              <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, letterSpacing: "0.1em" }}>SUBJECT  </span>
-              <span style={{ fontFamily: MONO, fontSize: 11, color: C.text }}>{proposal.subject}</span>
-            </div>
-
-            {[
-              { label: "Opening",     content: proposal.greeting  },
-              { label: "Overview",    content: proposal.overview  },
-            ].map(s => s.content && (
-              <div key={s.label} style={{ marginBottom: 16 }}>
-                <Label>{s.label}</Label>
-                <p style={{ fontFamily: BODY, fontSize: 13, lineHeight: 1.75, color: C.sub, margin: 0 }}>{s.content}</p>
+            {nicheRows.map((row, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px 60px", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.query}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub,   textAlign: "right" }}>{row.searches}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.green, textAlign: "right" }}>{row.aTotal}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.amber, textAlign: "right" }}>{row.bTotal}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.blue,  textAlign: "right" }}>{row.avgA}</span>
               </div>
             ))}
-
-            <div style={{ marginBottom: 16 }}>
-              <Label>Scope of Work</Label>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {(proposal.scopeItems || []).map((item, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    <span style={{ fontFamily: MONO, fontSize: 10, color: C.teal, flexShrink: 0, marginTop: 2 }}>-</span>
-                    <span style={{ fontFamily: BODY, fontSize: 13, color: C.sub, lineHeight: 1.6 }}>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {[
-              { label: "Timeline",   content: proposal.timeline   },
-              { label: "Investment", content: proposal.investment },
-              { label: "Next Steps", content: proposal.nextSteps  },
-              { label: "Closing",    content: proposal.closing    },
-            ].map(s => s.content && (
-              <div key={s.label} style={{ marginBottom: 16 }}>
-                <Label>{s.label}</Label>
-                <p style={{ fontFamily: BODY, fontSize: 13, lineHeight: 1.75, color: C.sub, margin: 0 }}>{s.content}</p>
-              </div>
-            ))}
-
-            <div style={{ padding: "10px 14px", background: "rgba(0,0,0,0.2)", borderRadius: 8, border: `1px solid ${C.border}` }}>
-              <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com</span>
-            </div>
           </div>
         </Card>
       )}
@@ -1905,361 +2148,83 @@ Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com`;
   );
 }
 
-// --- CLIENT TRACKER -----------------------------------------------------------
-function ClientTracker() {
-  const [clients,  setClientsRaw] = useState([]);
-  const [loaded,   setLoaded]     = useState(false);
-  const [adding,   setAdding]     = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const BLANK_CLIENT = { name: "", siteUrl: "", carePlan: false, careRate: "", launchedAt: "", lastCheckIn: "", nextInvoice: "", notes: "" };
-  const [form, setForm] = useState(BLANK_CLIENT);
+// --- SIDEBAR ------------------------------------------------------------------
+function Sidebar({ activeTab, onTabChange, pipeline }) {
+  const followUpDue   = pipeline.filter(l => followUpStatus(l)?.urgent).length;
+  const activePipeline = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
 
-  useEffect(() => {
-    loadClients().then(c => { setClientsRaw(c); setLoaded(true); });
-  }, []);
-
-  function save(updated) {
-    setClientsRaw(updated);
-    saveClients(updated);
-  }
-
-  function addClient() {
-    if (!form.name.trim()) return;
-    const newClient = { id: `${Date.now()}-${Math.random()}`, ...form, addedAt: new Date().toISOString() };
-    save([...clients, newClient]);
-    setForm(BLANK_CLIENT); setAdding(false);
-  }
-
-  function updateClient(id, patch) {
-    save(clients.map(c => c.id === id ? { ...c, ...patch } : c));
-  }
-
-  function removeClient(id) {
-    save(clients.filter(c => c.id !== id));
-  }
-
-  function daysSinceCheckIn(client) {
-    if (!client.lastCheckIn) return null;
-    const ts = Date.parse(client.lastCheckIn);
-    if (isNaN(ts)) return null;
-    return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
-  }
-
-  function checkInOverdue(client) {
-    const days = daysSinceCheckIn(client);
-    if (days === null) return false;
-    return days >= 30;
-  }
-
-  const overdueClients = clients.filter(checkInOverdue);
-
-  const inputStyle = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.35)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "8px 11px", fontFamily: MONO, fontSize: 11, color: C.text, outline: "none" };
-
-  if (!loaded) return <Card><p style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Loading clients...</span></p></Card>;
+  const sections = [
+    {
+      label: "Outreach",
+      items: [
+        { id: "leads",    label: "Leads",    dot: C.amber  },
+        { id: "pipeline", label: "Pipeline", dot: followUpDue > 0 ? C.red : C.green, badge: followUpDue > 0 ? `${followUpDue} due` : (activePipeline > 0 ? `${activePipeline}` : null), badgeColor: followUpDue > 0 ? C.red : C.green },
+        { id: "outreach", label: "Copy",     dot: C.purple },
+      ],
+    },
+    {
+      label: "Business",
+      items: [
+        { id: "proposal", label: "Proposals", dot: C.teal },
+        { id: "clients",  label: "Clients",   dot: C.teal },
+      ],
+    },
+    {
+      label: "Insights",
+      items: [
+        { id: "analytics", label: "Analytics", dot: C.blue   },
+        { id: "hashtags",  label: "Hashtags",  dot: C.purple },
+      ],
+    },
+  ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-      {overdueClients.length > 0 && (
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <Dot color={C.amber} pulse />
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, letterSpacing: "0.12em", textTransform: "uppercase" }}>Check-in Overdue ({overdueClients.length})</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {overdueClients.map(c => {
-              const days = daysSinceCheckIn(c);
-              return (
-                <div key={c.id} style={{ background: `${C.amber}08`, border: `1px solid ${C.amber}30`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <div>
-                    <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{c.name}</span>
-                    {c.siteUrl && <a href={c.siteUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.blue, marginLeft: 10, textDecoration: "none" }}>{c.siteUrl.replace(/https?:\/\//, "")}</a>}
-                    <p style={{ fontFamily: MONO, fontSize: 10, color: C.amber, margin: "3px 0 0" }}>{days}d since last check-in - 30-day cadence</p>
-                  </div>
-                  <Btn sm color={C.green} onClick={() => updateClient(c.id, { lastCheckIn: new Date().toISOString() })}>Mark Checked In</Btn>
-                </div>
-              );
-            })}
-          </div>
+    <div style={{ width: 192, flexShrink: 0, background: C.sidebar, borderRight: `1px solid ${C.border2}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 }}>
+      {/* Brand */}
+      <div style={{ padding: "16px 16px 14px", borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <Dot color={C.green} pulse size={7} />
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.text, letterSpacing: "0.04em" }}>RWS Command</span>
         </div>
-      )}
+        <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, paddingLeft: 15 }}>ops.rogers-websolutions.com</div>
+      </div>
 
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Dot color={C.teal} />
-            <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Clients</span>
-            <Pill color={C.teal} sm>{clients.length} active</Pill>
+      {/* Nav sections */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 0" }}>
+        {sections.map((section, si) => (
+          <div key={section.label}>
+            {si > 0 && <div style={{ borderTop: `1px solid ${C.border}`, margin: "8px 0" }} />}
+            <div style={{ padding: "6px 16px 4px" }}>
+              <span style={{ fontFamily: MONO, fontSize: 8, color: C.muted, letterSpacing: "0.18em", textTransform: "uppercase" }}>{section.label}</span>
+            </div>
+            {section.items.map(item => (
+              <div key={item.id} onClick={() => onTabChange(item.id)}
+                style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 12px", margin: "1px 6px", borderRadius: 7, cursor: "pointer", background: activeTab === item.id ? "rgba(255,255,255,0.07)" : "transparent", transition: "background 0.12s" }}>
+                <Dot color={item.dot} size={5} />
+                <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.07em", textTransform: "uppercase", color: activeTab === item.id ? C.text : C.muted, flex: 1, transition: "color 0.12s" }}>{item.label}</span>
+                {item.badge && (
+                  <span style={{ fontFamily: MONO, fontSize: 8, padding: "1px 6px", borderRadius: 10, background: `${item.badgeColor}14`, color: item.badgeColor, border: `1px solid ${item.badgeColor}30` }}>{item.badge}</span>
+                )}
+              </div>
+            ))}
           </div>
-          <Btn onClick={() => setAdding(a => !a)} color={C.teal} sm>{adding ? "Cancel" : "+ Add Client"}</Btn>
-        </div>
+        ))}
+      </div>
 
-        {adding && (
-          <div style={{ background: `${C.teal}06`, border: `1px solid ${C.teal}20`, borderRadius: 10, padding: "16px", marginBottom: 20 }}>
-            <Label>New Client</Label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-              {[
-                { key: "name",       label: "Business Name",  placeholder: "ABC Plumbing Co." },
-                { key: "siteUrl",    label: "Site URL",       placeholder: "https://abcplumbing.com" },
-                { key: "launchedAt", label: "Launch Date",    placeholder: "YYYY-MM-DD" },
-                { key: "nextInvoice",label: "Next Invoice",   placeholder: "YYYY-MM-DD" },
-              ].map(f => (
-                <div key={f.key}>
-                  <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>{f.label}</p>
-                  <input value={form[f.key]} onChange={e => setForm(f2 => ({ ...f2, [f.key]: e.target.value }))} placeholder={f.placeholder} style={inputStyle} />
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                <input type="checkbox" checked={form.carePlan} onChange={e => setForm(f => ({ ...f, carePlan: e.target.checked }))} />
-                <span style={{ fontFamily: MONO, fontSize: 11, color: C.text }}>Care Plan Active</span>
-              </label>
-              {form.carePlan && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>$/mo</span>
-                  <input value={form.careRate} onChange={e => setForm(f => ({ ...f, careRate: e.target.value }))} placeholder="200" style={{ ...inputStyle, width: 80 }} />
-                </div>
-              )}
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Notes</p>
-              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any context - what they wanted, quirks, referral source" style={{ ...inputStyle, resize: "vertical" }} />
-            </div>
-            <Btn onClick={addClient} disabled={!form.name.trim()} color={C.teal} sm>Save Client</Btn>
+      {/* Status footer */}
+      <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}` }}>
+        {[{ color: C.green, label: "AI connected" }, { color: C.green, label: "Pipeline synced" }].map(s => (
+          <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <Dot color={s.color} size={4} />
+            <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{s.label}</span>
           </div>
-        )}
-
-        {clients.length === 0
-          ? <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>No clients yet. Add your first one above.</p>
-          : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {clients.map(c => {
-                const isEditing  = editingId === c.id;
-                const days       = daysSinceCheckIn(c);
-                const overdue    = checkInOverdue(c);
-                return (
-                  <div key={c.id} style={{ background: C.cardHi, border: `1px solid ${overdue ? C.amber + "40" : C.border}`, borderRadius: 10, overflow: "hidden" }}>
-                    <div style={{ padding: "14px 16px", display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-                          <span style={{ fontFamily: BODY, fontSize: 14, fontWeight: 700, color: C.text }}>{c.name}</span>
-                          {c.carePlan && <Pill color={C.green} sm>Care Plan {c.careRate ? `$${c.careRate}/mo` : ""}</Pill>}
-                          {overdue && <Pill color={C.amber} sm>Check-in overdue</Pill>}
-                        </div>
-                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 4 }}>
-                          {c.siteUrl && <a href={c.siteUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 11, color: C.blue, textDecoration: "none" }}>{c.siteUrl.replace(/https?:\/\//, "")}</a>}
-                          {c.launchedAt && <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Launched {c.launchedAt}</span>}
-                          {c.nextInvoice && <span style={{ fontFamily: MONO, fontSize: 10, color: C.purple }}>Invoice {c.nextInvoice}</span>}
-                        </div>
-                        {days !== null && <span style={{ fontFamily: MONO, fontSize: 10, color: overdue ? C.amber : C.muted }}>{days === 0 ? "Checked in today" : `Last check-in: ${days}d ago`}</span>}
-                        {c.notes && <p style={{ fontFamily: MONO, fontSize: 10, color: C.sub, margin: "4px 0 0", fontStyle: "italic" }}>{c.notes}</p>}
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-end" }}>
-                        <Btn onClick={() => updateClient(c.id, { lastCheckIn: new Date().toISOString() })} color={C.green} sm>Check In</Btn>
-                        <Btn onClick={() => setEditingId(isEditing ? null : c.id)} color={C.purple} sm>{isEditing ? "Cancel" : "Edit"}</Btn>
-                        <Btn onClick={() => removeClient(c.id)} color={C.red} sm>Remove</Btn>
-                      </div>
-                    </div>
-                    {isEditing && (
-                      <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 16px", background: "rgba(171,71,188,0.04)" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-                          {[
-                            { key: "name",        label: "Business Name" },
-                            { key: "siteUrl",     label: "Site URL" },
-                            { key: "launchedAt",  label: "Launch Date (YYYY-MM-DD)" },
-                            { key: "nextInvoice", label: "Next Invoice (YYYY-MM-DD)" },
-                          ].map(f => (
-                            <div key={f.key}>
-                              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>{f.label}</p>
-                              <input defaultValue={c[f.key] || ""} onBlur={e => updateClient(c.id, { [f.key]: e.target.value })} style={inputStyle} />
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
-                          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                            <input type="checkbox" checked={c.carePlan} onChange={e => updateClient(c.id, { carePlan: e.target.checked })} />
-                            <span style={{ fontFamily: MONO, fontSize: 11, color: C.text }}>Care Plan Active</span>
-                          </label>
-                          {c.carePlan && (
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontFamily: MONO, fontSize: 11, color: C.muted }}>$/mo</span>
-                              <input defaultValue={c.careRate || ""} onBlur={e => updateClient(c.id, { careRate: e.target.value })} style={{ ...inputStyle, width: 80 }} />
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Notes</p>
-                          <textarea defaultValue={c.notes || ""} onBlur={e => updateClient(c.id, { notes: e.target.value })} rows={2} style={{ ...inputStyle, resize: "vertical" }} />
-                        </div>
-                        <div style={{ marginTop: 10 }}><Btn onClick={() => setEditingId(null)} color={C.green} sm>Done</Btn></div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-        }
-      </Card>
+        ))}
+      </div>
     </div>
   );
 }
 
-// --- HASHTAG MODULE -----------------------------------------------------------
-function HashtagModule() {
-  const TAGS = {
-    location: ["#orangecounty","#orangecountyca","#anaheim","#socalbusiness","#southerncalifornia","#oclocal","#inlandempire","#losangelesbusiness"],
-    business: ["#smallbusinessowner","#localbusiness","#smallbusiness","#independentbusiness","#solopreneur","#businessowner","#entrepreneurs"],
-    niche: ["#nailtech","#nailbusiness","#handyman","#handymanservices","#contractorbusiness","#independentmotel","#hospitalitybusiness","#tradesbusiness","#servicebusiness"],
-    web: ["#webdesign","#websitedesign","#webdesigner","#smallbusinesswebsite","#websitedesignorangecounty","#webdesignorangecounty","#localseo","#digitalmarketing","#onlinepresence"],
-    pain: ["#getfoundgoogle","#needawebsite","#nowebsite","#growyourbusiness","#getmorecustomers","#morereviews","#bookmoreclients"],
-    community: ["#ocbusiness","#orangecountybusiness","#orangecountyentrepreneur","#supportlocal","#shoplocal","#ocsmallbusiness"],
-  };
-
-  const NICHE_OPTIONS = [
-    { id: "any",      label: "Any / General" },
-    { id: "nail",     label: "Nail Tech" },
-    { id: "handyman", label: "Handyman" },
-    { id: "motel",    label: "Motel / Hospitality" },
-    { id: "trades",   label: "Trades (HVAC, Plumbing, Electric)" },
-    { id: "cleaning", label: "Cleaning / Landscaping" },
-  ];
-
-  const NICHE_TAG_MAP = {
-    nail:     ["#nailtech","#nailbusiness"],
-    handyman: ["#handyman","#handymanservices"],
-    motel:    ["#independentmotel","#hospitalitybusiness"],
-    trades:   ["#contractorbusiness","#tradesbusiness"],
-    cleaning: ["#servicebusiness","#tradesbusiness"],
-    any:      ["#servicebusiness","#smallbusinessowner"],
-  };
-
-  const [niche,     setNiche]     = useState("any");
-  const [generated, setGenerated] = useState(null);
-  const [history,   setHistory]   = useState([]);
-  const [copied,    setCopied]    = useState(false);
-
-  function pick(arr, n, exclude = []) {
-    const pool = arr.filter(t => !exclude.includes(t));
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, n);
-  }
-
-  function generate() {
-    const lastSet   = history[history.length - 1] || [];
-    const location  = pick(TAGS.location,  3, lastSet);
-    const nichetags = NICHE_TAG_MAP[niche] || NICHE_TAG_MAP.any;
-    const web       = pick(TAGS.web,       2, lastSet);
-    const pain      = pick(TAGS.pain,      2, lastSet);
-    const community = pick(TAGS.community, 1, lastSet);
-    const set = [...location, ...nichetags, ...web, ...pain, ...community];
-    setGenerated(set);
-    setHistory(h => [...h.slice(-9), set]);
-    setCopied(false);
-  }
-
-  function copy() {
-    if (!generated) return;
-    navigator.clipboard?.writeText(generated.join(" "));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  const CATEGORY_META = [
-    { key: "location",  color: C.blue,   label: "Location" },
-    { key: "niche",     color: C.green,  label: "Niche" },
-    { key: "web",       color: C.purple, label: "Web / Digital" },
-    { key: "pain",      color: C.amber,  label: "Pain Point" },
-    { key: "community", color: C.teal,   label: "Community" },
-  ];
-
-  const nicheTagSet = new Set(NICHE_TAG_MAP[niche] || []);
-
-  function tagCategory(tag) {
-    if (TAGS.location.includes(tag))  return C.blue;
-    if (nicheTagSet.has(tag))         return C.green;
-    if (TAGS.web.includes(tag))       return C.purple;
-    if (TAGS.pain.includes(tag))      return C.amber;
-    if (TAGS.community.includes(tag)) return C.teal;
-    return C.muted;
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-          <Dot color={C.purple} />
-          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Hashtag Generator</span>
-          <Pill color={C.purple} sm>Instagram</Pill>
-        </div>
-
-        <Label>Post Niche</Label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
-          {NICHE_OPTIONS.map(o => (
-            <button key={o.id} onClick={() => setNiche(o.id)}
-              style={{ fontFamily: MONO, fontSize: 10, padding: "5px 13px", borderRadius: 20, cursor: "pointer", background: niche === o.id ? `${C.purple}18` : "transparent", border: `1px solid ${niche === o.id ? C.purple : C.border}`, color: niche === o.id ? C.purple : C.muted }}>
-              {o.label}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-          <Btn onClick={generate} color={C.purple}>Generate Set</Btn>
-          {generated && <Btn onClick={generate} color={C.muted} sm>Regenerate</Btn>}
-          {generated && <Btn onClick={copy} color={copied ? C.green : C.muted} sm>{copied ? "Copied" : "Copy All"}</Btn>}
-        </div>
-
-        {generated && (
-          <>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16, padding: "16px", background: "rgba(0,0,0,0.25)", borderRadius: 10, border: `1px solid ${C.border}` }}>
-              {generated.map(tag => {
-                const color = tagCategory(tag);
-                return (
-                  <span key={tag} onClick={() => { navigator.clipboard?.writeText(tag); }}
-                    style={{ fontFamily: MONO, fontSize: 11, color, background: `${color}12`, border: `1px solid ${color}30`, borderRadius: 20, padding: "3px 10px", cursor: "pointer" }}
-                    title="Click to copy tag">
-                    {tag}
-                  </span>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-              {CATEGORY_META.map(c => (
-                <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <Dot color={c.color} size={5} />
-                  <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{c.label}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </Card>
-
-      <Card>
-        <Label>Rotation Rules</Label>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[
-            { color: C.blue,   text: "2-3 location tags per post" },
-            { color: C.green,  text: "1-2 niche callouts -- highest leverage, targets warm leads" },
-            { color: C.purple, text: "2 web/digital tags" },
-            { color: C.amber,  text: "1-2 pain point tags" },
-            { color: C.teal,   text: "1 community tag" },
-          ].map((r, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Dot color={r.color} size={6} />
-              <span style={{ fontFamily: BODY, fontSize: 13, color: C.sub }}>{r.text}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop: 14, padding: "10px 14px", background: `${C.amber}08`, borderRadius: 8, border: `1px solid ${C.amber}20` }}>
-          <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber }}>Note: </span>
-          <span style={{ fontFamily: BODY, fontSize: 12, color: C.sub }}>IG treats identical hashtag blocks as spam over time. Each generated set is varied to avoid repeating the exact same combination.</span>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// --- COMMAND CENTER ------------------------------------------------------------
+// --- COMMAND CENTER -----------------------------------------------------------
 function CommandCenter({ prepData }) {
   const [tab,            setTab]           = useState("leads");
   const [pipelineLoaded, setPipelineLoaded] = useState(false);
@@ -2270,8 +2235,8 @@ function CommandCenter({ prepData }) {
     loading:   false,
     error:     "",
   });
-  const [outreachState,  setOutreachState] = useState({ type: "cold" });
-  const [pipeline,       setPipelineRaw]  = useState([]);
+  const [outreachState, setOutreachState] = useState({ type: "cold" });
+  const [pipeline,      setPipelineRaw]   = useState([]);
 
   useEffect(() => {
     if (prepData?.pipeline?.length > 0) { setPipelineRaw(prepData.pipeline); setPipelineLoaded(true); }
@@ -2292,60 +2257,57 @@ function CommandCenter({ prepData }) {
   function removeLead(id)        { setPipelineRaw(p => p.filter(l => l.id !== id)); }
 
   const pipelineNames  = new Set(pipeline.map(l => l.name));
-  const activePipeline = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
   const followUpDue    = pipeline.filter(l => followUpStatus(l)?.urgent).length;
 
-  const tabs = [
-    { id: "leads",    label: "Leads",    dot: C.amber  },
-    { id: "outreach", label: "Outreach", dot: C.purple },
-    { id: "pipeline", label: "Pipeline", dot: followUpDue > 0 ? C.red : C.green, badge: followUpDue > 0 ? `${followUpDue} due` : (activePipeline || null) },
-    { id: "proposal", label: "Proposal", dot: C.teal   },
-    { id: "clients",  label: "Clients",  dot: C.teal   },
-    { id: "analytics",label: "Analytics",dot: C.blue   },
-    { id: "hashtags", label: "Hashtags",  dot: C.purple },
-  ];
+  // Panel header info per tab
+  const PANEL_HEADERS = {
+    leads:     { title: "Leads",           sub: leadsState.prospects.length > 0 ? `${leadsState.prospects.length} results` : "Google Maps real data" },
+    pipeline:  { title: "Pipeline",        sub: `${pipeline.length} total${followUpDue > 0 ? ` · ${followUpDue} follow-ups due` : ""}` },
+    outreach:  { title: "Copy Generator",  sub: "IG DMs · emails · follow-ups" },
+    proposal:  { title: "Proposals",       sub: "AI-drafted in your voice" },
+    clients:   { title: "Clients",         sub: "Active accounts + check-in tracker" },
+    analytics: { title: "Analytics",       sub: "Pipeline funnel + outreach activity" },
+    hashtags:  { title: "Hashtags",        sub: "Instagram sets" },
+  };
+
+  const header = PANEL_HEADERS[tab] || { title: tab, sub: "" };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: BODY, backgroundImage: `radial-gradient(ellipse 70% 35% at 10% 0%, rgba(0,230,118,0.03) 0%, transparent 50%)` }}>
-      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "0 24px" }}>
-        <div style={{ maxWidth: 1000, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Dot color={C.green} pulse size={8} />
-            <span style={{ fontFamily: MONO, fontSize: 12, color: C.text, letterSpacing: "0.04em" }}>RWS Command</span>
-            <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}> ops.rogers-websolutions.com</span>
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,500&family=Azeret+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      <Sidebar activeTab={tab} onTabChange={setTab} pipeline={pipeline} />
+
+      {/* Main content */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", overflow: "hidden" }}>
+        {/* Panel header */}
+        <div style={{ borderBottom: `1px solid ${C.border}`, padding: "14px 24px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontFamily: MONO, fontSize: 11, color: C.text, letterSpacing: "0.08em", textTransform: "uppercase" }}>{header.title}</div>
+            <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, marginTop: 2 }}>{header.sub}</div>
           </div>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            {[{ c: C.green, l: "AI" }, { c: pipelineLoaded ? C.green : C.amber, l: "Pipeline" }].map(s => (
-              <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <Dot color={s.c} size={5} />
-                <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{s.l}</span>
-              </div>
-            ))}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <Dot color={C.green} size={4} />
+              <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>AI</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <Dot color={pipelineLoaded ? C.green : C.amber} size={4} />
+              <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>Pipeline</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div style={{ borderBottom: `1px solid ${C.border}`, padding: "0 24px" }}>
-        <div style={{ maxWidth: 1000, margin: "0 auto", display: "flex", gap: 2, overflowX: "auto" }}>
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: MONO, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", padding: "13px 16px", border: "none", background: "transparent", cursor: "pointer", color: tab === t.id ? C.text : C.muted, borderBottom: `2px solid ${tab === t.id ? t.dot : "transparent"}`, transition: "all 0.15s", whiteSpace: "nowrap" }}>
-              <Dot color={tab === t.id ? t.dot : C.muted} size={5} />
-              {t.label}
-              {t.badge && <span style={{ fontFamily: MONO, fontSize: 9, padding: "1px 6px", borderRadius: 10, background: `${C.green}20`, color: C.green, border: `1px solid ${C.green}30` }}>{t.badge}</span>}
-            </button>
-          ))}
+        {/* Scrollable panel body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+          <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState}    onAdd={addToPipeline} pipelineNames={pipelineNames} /></div>
+          <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
+          <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead}       onRemove={removeLead} onAdd={addToPipeline} /></div>
+          <div style={{ display: tab === "proposal"  ? "block" : "none" }}><ProposalModule /></div>
+          <div style={{ display: tab === "clients"   ? "block" : "none" }}><ClientTracker /></div>
+          <div style={{ display: tab === "analytics" ? "block" : "none" }}><AnalyticsModule pipeline={pipeline} /></div>
+          <div style={{ display: tab === "hashtags"  ? "block" : "none" }}><HashtagModule /></div>
         </div>
-      </div>
-
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 24px" }}>
-        <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState}    onAdd={addToPipeline} pipelineNames={pipelineNames} /></div>
-        <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
-        <div style={{ display: tab === "pipeline"  ? "block" : "none" }}><PipelineModule pipeline={pipeline}   onUpdate={updateLead}       onRemove={removeLead} onAdd={addToPipeline} /></div>
-        <div style={{ display: tab === "proposal"  ? "block" : "none" }}><ProposalModule /></div>
-        <div style={{ display: tab === "clients"   ? "block" : "none" }}><ClientTracker /></div>
-        <div style={{ display: tab === "analytics" ? "block" : "none" }}><AnalyticsModule pipeline={pipeline} /></div>
-        <div style={{ display: tab === "hashtags"  ? "block" : "none" }}><HashtagModule /></div>
       </div>
 
       <style>{`
@@ -2353,12 +2315,13 @@ function CommandCenter({ prepData }) {
         @keyframes ripple {0%{box-shadow:0 0 0 0 rgba(0,230,118,0.45)}100%{box-shadow:0 0 0 12px rgba(0,230,118,0)}}
         *{box-sizing:border-box} button:hover:not(:disabled){opacity:0.78}
         textarea::placeholder,input::placeholder{color:rgba(255,255,255,0.16)}
+        ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:transparent} ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
       `}</style>
     </div>
   );
 }
 
-// --- ROOT ----------------------------------------------------------------------
+// --- ROOT ---------------------------------------------------------------------
 export default function Page() {
   const [unlocked, setUnlocked] = useState(false);
   const [entered,  setEntered]  = useState(false);

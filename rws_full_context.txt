@@ -77,6 +77,9 @@ export async function POST(req) {
     return Response.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\auth\callback\route.js
 // src/app/api/auth/callback/route.js
 // Step 2 of OAuth: Google redirects here with a code, we exchange for tokens
@@ -120,6 +123,9 @@ export async function GET(req) {
     return Response.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\auth\google\route.js
 // src/app/api/auth/google/route.js
 // Step 1 of OAuth: redirects Trafton to Google consent screen
@@ -142,6 +148,9 @@ export async function GET() {
 
   return Response.redirect(url);
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\calendar\route.js
 // src/app/api/calendar/route.js
 // Fetches real upcoming calendar events
@@ -192,6 +201,9 @@ export async function GET(req) {
     return Response.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\chat\route.js
 // src/app/api/chat/route.js
 // Anthropic API proxy â€” rate limited, validates input
@@ -232,6 +244,9 @@ export async function POST(req) {
     return Response.json({ error: { message: err.message } }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\clients\clients-route.js
 // src/app/api/clients/route.js
 // Persistent client tracker via Upstash Redis
@@ -282,6 +297,9 @@ export async function POST(req) {
     return Response.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\dismissed\route.js
 // src/app/api/dismissed/route.js
 // Stores dismissed lead names in Redis so they never resurface
@@ -335,6 +353,9 @@ export async function POST(req) {
     return Response.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\enrich\route.js
 // src/app/api/enrich/route.js
 // Enriches a lead with email and Instagram:
@@ -542,6 +563,9 @@ export async function POST(req) {
     return Response.json({ error: err.message, enriched: false }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\gmail\route.js
 // src/app/api/gmail/route.js
 // Fetches real unread emails from trogers@rogers-websolutions.com
@@ -604,6 +628,9 @@ export async function GET() {
     return Response.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\gmail-send\route.js
 // src/app/api/gmail-send/route.js
 import { google } from "googleapis";
@@ -686,6 +713,9 @@ export async function POST(req) {
     return Response.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\leads\route.js
 // src/app/api/leads/route.js
 // Fetches real local businesses from Google Maps via Serper.dev
@@ -801,6 +831,9 @@ function extractCity(address) {
   if (parts.length >= 2) return parts[parts.length - 2].trim();
   return "Orange County";
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\api\pipeline\route.js
 // src/app/api/pipeline/route.js
 // Persistent pipeline storage via Upstash Redis
@@ -874,6 +907,9 @@ export async function POST(req) {
     return Response.json({ error: err.message }, { status: 500 });
   }
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\layout.js
 // src/app/layout.js
 export const metadata = {
@@ -890,6 +926,9 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\app\page.js
 "use client";
 import { useState, useEffect } from "react";
@@ -948,14 +987,16 @@ KEY FACTS:
 - Only available evenings and weekends
 
 TRAFTON'S VOICE - follow this exactly:
-- Direct and confident. Get to the point in the first sentence.
-- Consultative, not salesy. Point out a real problem, don't pitch a product.
-- Data-driven. Reference real ratings, review counts, missing website specifically.
+- Lead with one specific observation about THIS business. Not a generic opener.
+- State the practical gap plainly. One sentence. Do not explain what it costs them or lecture them about it.
+- Never tell them they are losing business, losing clients, or falling behind competitors. They know their business. That framing is condescending and kills replies.
+- Never use competitor framing. Do not mention what competitors are doing.
 - Short. Every word earns its place.
-- Low-pressure close. Invite a conversation, send them to https://www.rogers-websolutions.com/book to book.
-- NEVER say: leverage, digital footprint, I'd love the opportunity, I hope this finds you well, we help businesses grow
-- NEVER use em-dashes, exclamation points, or fake casual openers
+- Low-pressure close. One sentence. Send them to rogers-websolutions.com/book.
+- NEVER say: leverage, digital footprint, online presence, I'd love the opportunity, I hope this finds you well, we help businesses grow, which means, that means, missing out
+- NEVER use em-dashes, exclamation points, or fake casual openers like "Hey!" or "Hope you're well"
 - NEVER invent data. Only use facts provided about the actual business.
+- DMs are for beauty/service Instagram businesses ONLY. Trades get email.
 
 EMAIL SIGNATURE - always end emails with exactly this, on its own line:
 Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com
@@ -1540,11 +1581,11 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
     const wType      = prospect.websiteType;
     const wUrl       = prospect.website;
     const websiteCtx =
-      wType === "link_in_bio" ? `Has a link-in-bio page (${wUrl}) - NOT a real website`
-      : wType === "weak"      ? `Has a weak DIY website (${wUrl}) - poor SEO`
+      wType === "link_in_bio" ? `Has a link-in-bio page (${wUrl}) - no standalone website`
+      : wType === "weak"      ? `Has a DIY website (${wUrl})`
       : wType === "real"      ? `Has a real website: ${wUrl}`
       : wUrl                  ? `Has website: ${wUrl}`
-      : "No website - completely invisible online";
+      : "No website";
 
     const contactInfo = [
       prospect.email     ? `Email: ${prospect.email}` : null,
@@ -1556,18 +1597,18 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
 
     const typeInstructions =
       type === "secondbump"
-        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. This is the third and final contact attempt â€” they have not responded to two previous messages. DM must be 1-2 sentences MAX. No pressure, no re-pitch. Just a brief check-in with the booking link. Email: 2-3 short paragraphs max.`
+        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. Third and final contact. DM is ONE sentence only â€” just the door left open and the booking link. No re-pitch. No observation. No explanation of why anything would help them. No value proposition. Email: 2 sentences max, same rules.`
         : type === "followup"
-          ? `Write a FIRST follow-up IG DM and first follow-up email. They did not respond to initial cold outreach. Brief, low pressure, slightly different angle. Do NOT re-pitch from scratch or re-introduce yourself.`
-          : `Write a cold IG DM and cold email for this REAL business.`;
+          ? `Write a FIRST follow-up IG DM and first follow-up email. They did not respond to cold outreach. STRICT RULES: Do NOT explain why a website, booking form, or any tool would help them. Do NOT pitch a value proposition. Do NOT say what something "could" do for them. One new observation or a soft open door, then the link. That is all. DM is 2 sentences MAX. Email: 2-3 short paragraphs, same rules â€” observation or door, link, done.`
+          : `Write a cold IG DM and cold email for this REAL business. DM rules: 3 sentences MAX. Sentence 1: one specific observation about this business using real data only (rating, review count, category). Sentence 2: open a door â€” one plain sentence about what RWS does, no problem framing, no gap lecture, no "which means", no pain amplification, no competitor mention. Sentence 3: soft ask with rogers-websolutions.com/book. Cold email: 3-4 short paragraphs. Same rules â€” observation first, door open second, soft ask close. Do not use "online presence", "digital footprint", "missing out", "losing", "falling behind", or any urgency language.`;
 
     const emailLabel = type === "secondbump" ? "Second follow-up" : type === "followup" ? "Follow-up" : "Cold";
-    const dmLength   = type === "secondbump" ? "1-2 sentences MAX" : "3-4 sentences";
+    const dmLength   = type === "secondbump" ? "1 sentence ONLY" : type === "followup" ? "1-2 sentences MAX" : "3 sentences MAX";
 
     try {
       const raw = await ai(
         RWS_CTX + `\n\n${typeInstructions} Return ONLY valid JSON, no backticks:
-{"dm":"${dmLength}. Casual Instagram DM. ${type === "cold" ? "Reference real rating and review count. Be precise about web presence." : "Do NOT re-introduce yourself or repeat the cold pitch."} Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"${type !== "cold" ? "Subject that makes clear this is a follow-up, not a first contact" : "Subject using their real data points"}","emailBody":"${emailLabel} email. ${type === "secondbump" ? "Very short â€” 2-3 paragraphs max." : "3-4 short paragraphs."} Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+{"dm":"${dmLength}. ${type === "cold" ? "Observation first. Open a door second â€” what RWS does, no problem framing. Soft ask third. No competitor framing. No pain lecture." : "Do NOT re-introduce yourself or repeat the cold pitch. No pain points."} Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"${type !== "cold" ? "Subject that signals follow-up without being passive aggressive" : "Subject line using one specific real data point about the business â€” not generic"}","emailBody":"${emailLabel} email. ${type === "secondbump" ? "Very short â€” 2 paragraphs max. No re-pitch." : "3-4 short paragraphs. No urgency language. No competitor framing."} Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
         `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}* | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
       );
       if (raw.startsWith("Error:")) { setGenError(raw); }
@@ -2127,10 +2168,10 @@ function OutreachModule({ state, setState, pipeline }) {
     if (!target.trim()) return;
     setState(s => ({ ...s, loading: true, output: "" }));
     const prompts = {
-      cold:     "Write a cold outreach EMAIL with Subject: line. Human, value-first, Calendly close. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
-      dm:       "Write a cold Instagram DM. 3-4 sentences. Soft rogers-websolutions.com/book close. Final line: Trafton @ Rogers Web Solutions",
-      followup: "Write a follow-up email. Brief, no pressure. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
-      warm:     "Write a closing email. Confident, short, move to book. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
+      cold:     "Write a cold outreach EMAIL with Subject: line. Open with one specific observation about this business using real data. State the practical gap plainly â€” no competitor framing, no urgency, no 'which means', no pain amplification. 3-4 short paragraphs. Soft close with rogers-websolutions.com/book. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
+      dm:       "Write a cold Instagram DM. 3 sentences MAX. Sentence 1: specific observation using real data. Sentence 2: plain gap statement, no lecturing. Sentence 3: soft ask with rogers-websolutions.com/book. Final line: Trafton @ Rogers Web Solutions",
+      followup: "Write a follow-up email. 1-2 short paragraphs. Different angle from cold outreach. No re-pitch, no pain points, no urgency. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
+      warm:     "Write a closing email to a warm lead. Confident, short, direct path to booking. Final line: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com",
     };
     const r = await ai(RWS_CTX + `\n\n${prompts[type]}`, target);
     setState(s => ({ ...s, output: r, loading: false }));
@@ -2509,7 +2550,10 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
                         {l.instagram && <a href={l.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{l.instagramHandle || "IG"}</a>}
                         {l.phone && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{l.phone}</span>}
                       </div>
-                      <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <span style={{ fontFamily: MONO, fontSize: 10, color: fu.color }}>{fu.label}</span>
+                        <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>{l.status === "followup" ? "2 contacts sent" : "1 contact sent"}</span>
+                      </div>
                     </div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <Btn sm color={C.amber} onClick={() => setExpandedFollowUp(isExpanded ? null : l.id)}>
@@ -3256,6 +3300,9 @@ export default function Page() {
   if (!entered)  return <LoginScreen onEnter={() => setEntered(true)} onPrepReady={setPrepData} />;
   return <CommandCenter prepData={prepData} />;
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\lib\google.js
 // src/lib/google.js
 // Shared Google OAuth2 client used by all API routes
@@ -3282,6 +3329,9 @@ export function getOAuthClient() {
 export function isAuthorized() {
   return !!process.env.GOOGLE_REFRESH_TOKEN;
 }
+
+
+
 // FILE: E:\RWS\RWS-Ops\rws-ops-private\src\lib\rateLimit.js
 // src/lib/rateLimit.js
 // Simple in-memory rate limiter for Next.js API routes
@@ -3321,3 +3371,71 @@ export const chatLimiter    = rateLimit({ max: 60, windowMs: 60000 });
 export const enrichLimiter  = rateLimit({ max: 30, windowMs: 60000 });
 export const gmailLimiter   = rateLimit({ max: 10, windowMs: 60000 });
 export const pipelineLimiter = rateLimit({ max: 60, windowMs: 60000 });
+
+
+
+// FILE: E:\RWS\RWS-Ops\rws-ops-private\jsconfig.json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}
+
+
+// FILE: E:\RWS\RWS-Ops\rws-ops-private\next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "X-Frame-Options",           value: "DENY" },
+          { key: "X-Content-Type-Options",    value: "nosniff" },
+          { key: "Referrer-Policy",           value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy",        value: "camera=(), microphone=(), geolocation=()" },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
+              "connect-src 'self' https://api.anthropic.com https://serpapi.com https://api.apollo.io",
+              "img-src 'self' data: https:",
+              "frame-ancestors 'none'",
+            ].join("; "),
+          },
+        ],
+      },
+    ];
+  },
+};
+module.exports = nextConfig;
+
+
+
+// FILE: E:\RWS\RWS-Ops\rws-ops-private\package.json
+{
+  "name": "rws-ops",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "googleapis": "^140.0.0",
+    "@upstash/redis": "^1.34.0"
+  }
+}
+
+
+
