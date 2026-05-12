@@ -36,10 +36,12 @@ const STATUS = {
 const GRADE_COLOR = { A: C.green, B: C.amber, C: C.blue, D: C.muted };
 
 // 3-7-7 cadence — first follow-up at day 3, second bump at +7d, re-engage at +90d cold
+// Touch budget: 3 total contacts max (cold + first follow-up + second bump). After that, lead goes cold.
 const CADENCE = {
   firstFollowUpDays:  3,   // days after contactedAt to surface first follow-up
   secondBumpDays:     7,   // days after firstFollowUpAt to surface second bump
   reEngageDays:       90,  // days after coldAt to re-surface
+  maxTouches:         3,   // hard cap. 3+ touches = generation blocked, route to cold
 };
 
 const TECH_TOPICS = [
@@ -354,6 +356,49 @@ function isReEngageReady(lead) {
 function daysCold(lead) {
   if (lead.status !== "cold") return null;
   return daysSince(lead.coldAt || lead.contactedAt);
+}
+
+// --- TOUCH COUNT + OUTREACH HISTORY ------------------------------------------
+// outreachCount = total messages sent (cold + follow-ups + manual logs)
+// outreachHistory = [{channel, text, sentAt, touchNumber}] full history
+//
+// Migration for old leads:
+// - If outreachCount is undefined, infer from status + legacy fields
+// - priorDm/priorEmail (from previous commit) get folded into outreachHistory once
+function getOutreachCount(lead) {
+  if (typeof lead.outreachCount === "number") return lead.outreachCount;
+  // Infer from legacy data
+  if (lead.outreachHistory?.length) return lead.outreachHistory.length;
+  const hasPrior = !!(lead.priorDm || lead.priorEmail);
+  if (lead.status === "followup") return Math.max(2, hasPrior ? 1 : 0);
+  if (lead.status === "contacted") return Math.max(1, hasPrior ? 1 : 0);
+  if (lead.status === "cold" || lead.status === "closed") return hasPrior ? 1 : 1; // assume at least 1
+  return hasPrior ? 1 : 0;
+}
+
+function getOutreachHistory(lead) {
+  if (Array.isArray(lead.outreachHistory) && lead.outreachHistory.length > 0) {
+    return lead.outreachHistory;
+  }
+  // Build from legacy priorDm/priorEmail if present
+  const legacy = [];
+  if (lead.priorDm)    legacy.push({ channel: "dm",    text: lead.priorDm,    sentAt: lead.lastOutreachAt || lead.contactedAt, touchNumber: 1 });
+  if (lead.priorEmail) legacy.push({ channel: "email", text: lead.priorEmail, sentAt: lead.lastOutreachAt || lead.contactedAt, touchNumber: legacy.length + 1 });
+  return legacy;
+}
+
+// What kind of copy should the next generation produce, based on touch count?
+// 0 → cold, 1 → followup (first), 2 → secondbump, 3+ → BLOCKED
+function nextCopyType(lead) {
+  const n = getOutreachCount(lead);
+  if (n === 0) return "cold";
+  if (n === 1) return "followup";
+  if (n === 2) return "secondbump";
+  return "blocked";
+}
+
+function isAtTouchLimit(lead) {
+  return getOutreachCount(lead) >= CADENCE.maxTouches;
 }
 
 // --- SHARED UI ----------------------------------------------------------------
@@ -715,7 +760,19 @@ function CopyPanel({ prospect, onSend, onChannel, copyType = null, autoGenerate 
     if (autoGenerate) generateCopy();
   }, []);
 
+  // Compute effective copy type:
+  // - If parent explicitly passed copyType (e.g., the urgent follow-up section), honor it
+  // - Otherwise derive from touch count: 0→cold, 1→followup, 2→secondbump, 3+→blocked
+  const touchCount        = getOutreachCount(prospect);
+  const outreachHistory   = getOutreachHistory(prospect);
+  const derivedType       = nextCopyType(prospect);
+  const effectiveType     = copyType || derivedType;
+  const atTouchLimit      = isAtTouchLimit(prospect);
+  // Block if either (a) derived type says blocked, or (b) parent forced a follow-up type but we're already at limit
+  const generationBlocked = effectiveType === "blocked" || (atTouchLimit && effectiveType !== "cold");
+
   async function generateCopy() {
+    if (generationBlocked) return;
     if (draft) { setExpanded(e => !e); return; }
     setGenerating(true); setGenError(null);
 
@@ -734,32 +791,27 @@ function CopyPanel({ prospect, onSend, onChannel, copyType = null, autoGenerate 
       prospect.phone     ? `Phone: ${prospect.phone}` : null,
     ].filter(Boolean).join(" | ");
 
-    const type = copyType || "cold";
-
-    // For follow-ups, pass prior cold message so model avoids parroting it.
-    // priorDm / priorEmail are stamped on the lead when the cold version is copied/sent.
-    const priorDm    = prospect.priorDm    || null;
-    const priorEmail = prospect.priorEmail || null;
-    const hasPriorContext = type !== "cold" && (priorDm || priorEmail);
+    const type = effectiveType;
+    const hasPriorContext = type !== "cold" && outreachHistory.length > 0;
 
     const typeInstructions =
       type === "secondbump"
-        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. Third and final contact.
+        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. This is contact #${touchCount + 1} of ${CADENCE.maxTouches}. Third and final contact.
 
 ABSOLUTE RULES — violating any of these makes this read as automated/AI/spam:
 - DM is ONE sentence only. The door left open + the booking link. That is the entire message.
 - Email body is 2 sentences max.
-- DO NOT restate the rating, review count, location, or category. Those data points were already used in the cold message.
+- DO NOT restate the rating, review count, location, or category. Those data points were already used in prior messages.
 - DO NOT repeat the original pitch sentence ("I build websites for..." / "We build...").
 - DO NOT explain what a website would do for them. No value proposition. No "easier booking", no "showcase", no "help you grow".
 - DO NOT introduce any new observation. This is a closer, not a re-engagement.
 - Use phrasing like "last note from me" or "this is the last one" — it removes pressure and gets disproportionate replies.
 - No urgency. No guilt. No "I get it, you're busy" (that's condescending).`
         : type === "followup"
-          ? `Write a FIRST follow-up IG DM and first follow-up email. They did not respond to cold outreach.
+          ? `Write a FIRST follow-up IG DM and first follow-up email. This is contact #${touchCount + 1} of ${CADENCE.maxTouches}. They did not respond to cold outreach.
 
 ABSOLUTE RULES — violating any of these makes this read as a mass blast:
-- DO NOT restate the rating, review count, location, or category. Those data points were already used in the cold message. Recipients notice repeat data IMMEDIATELY and it's the #1 signal of automation.
+- DO NOT restate the rating, review count, location, or category. Those data points were already used in prior messages. Recipients notice repeat data IMMEDIATELY and it's the #1 signal of automation.
 - DO NOT repeat the original pitch sentence verbatim or near-verbatim. The cold message already said "I build websites for [niche] in OC" or equivalent. Do not say that again.
 - DO NOT explain why a website would help them. No value proposition. No "make booking easier", no "showcase services", no "help you grow", no "more clients", no "online presence".
 - DO NOT use phrases like "if you're interested in exploring", "might look like", "basic", "simple" — these are corporate hedge language.
@@ -769,8 +821,9 @@ ABSOLUTE RULES — violating any of these makes this read as a mass blast:
 - DM is 2 sentences MAX. Email body is 2-3 short paragraphs MAX.`
           : `Write a cold IG DM and cold email for this REAL business. DM rules: 3 sentences MAX. Sentence 1: one specific observation about this business using real data only (rating, review count, category). Sentence 2: open a door — one plain sentence about what RWS does, no problem framing, no gap lecture, no "which means", no pain amplification, no competitor mention. Sentence 3: soft ask with rogers-websolutions.com/book. Cold email: 3-4 short paragraphs. Same rules — observation first, door open second, soft ask close. Do not use "online presence", "digital footprint", "missing out", "losing", "falling behind", or any urgency language.`;
 
+    // Build full prior-context block from outreachHistory
     const priorContextBlock = hasPriorContext
-      ? `\n\nPRIOR COLD MESSAGES ALREADY SENT TO THIS LEAD (do NOT parrot phrasing, observations, or pitch sentences from these — the recipient saw them already):${priorDm ? `\n--- PRIOR DM ---\n${priorDm}` : ""}${priorEmail ? `\n--- PRIOR EMAIL ---\n${priorEmail}` : ""}\n--- END PRIOR ---\n\nYour follow-up must read like a HUMAN bump from someone who already sent the above and is just nudging once more. Do not re-introduce yourself. Do not restate the data points. Do not repeat the pitch.`
+      ? `\n\nMESSAGES ALREADY SENT TO THIS LEAD (${outreachHistory.length} prior touch${outreachHistory.length === 1 ? "" : "es"}). DO NOT parrot phrasing, observations, or pitch sentences from any of these — the recipient already saw them all:\n${outreachHistory.map((m, i) => `--- TOUCH #${m.touchNumber || i+1} (${m.channel.toUpperCase()}) ---\n${m.text}`).join("\n")}\n--- END PRIOR ---\n\nYour next message must read like a HUMAN bump from someone who already sent the above. Do not re-introduce yourself. Do not restate the data points. Do not repeat the pitch sentence. Do not echo phrasing patterns from any prior message.`
       : "";
 
     const emailLabel = type === "secondbump" ? "Second follow-up" : type === "followup" ? "Follow-up" : "Cold";
@@ -792,11 +845,9 @@ ABSOLUTE RULES — violating any of these makes this read as a mass blast:
     setGenerating(false);
   }
 
-  // copyType determines what gets stamped onto the lead:
-  // - "cold" → stamp priorDm/priorEmail (so future follow-ups can avoid parroting)
-  // - "followup" / "secondbump" → don't overwrite the cold message; that's the
-  //   reference text future generations should still avoid copying
-  const isColdGeneration = !copyType || copyType === "cold";
+  // CopyPanel always reports back the message text + which copyType produced it.
+  // Parent (PipelineGridCard) pushes the entry to outreachHistory and increments outreachCount.
+  // The legacy isColdGeneration flag is removed — every send is captured.
 
   async function handleSend() {
     if (!prospect.email || !draft) return;
@@ -807,7 +858,7 @@ ABSOLUTE RULES — violating any of these makes this read as a mass blast:
       setSendResult("sent");
       logOutreach("emails");
       if (onChannel) {
-        onChannel("email", isColdGeneration ? `Subject: ${draft.emailSubject}\n\n${draft.emailBody}` : null);
+        onChannel("email", `Subject: ${draft.emailSubject}\n\n${draft.emailBody}`, effectiveType);
       }
       if (onSend) onSend();
     }
@@ -817,74 +868,131 @@ ABSOLUTE RULES — violating any of these makes this read as a mass blast:
   function handleDmCopy() {
     logOutreach("dms");
     if (onChannel) {
-      onChannel("dm", isColdGeneration ? draft?.dm : null);
+      onChannel("dm", draft?.dm, effectiveType);
     }
   }
 
   function handleEmailCopy() {
-    if (onChannel && isColdGeneration && draft) {
-      onChannel("email", `Subject: ${draft.emailSubject}\n\n${draft.emailBody}`);
+    if (onChannel && draft) {
+      onChannel("email", `Subject: ${draft.emailSubject}\n\n${draft.emailBody}`, effectiveType);
     }
   }
 
   return (
     <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px" }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: expanded && draft ? 14 : 0 }}>
-        <Btn onClick={() => generateCopy()} loading={generating} color={C.amber} sm>
-          {draft ? (expanded ? "Hide Copy" : "Show Copy") : "Get Copy"}
-        </Btn>
-        {genError && <Btn onClick={() => { setGenError(null); generateCopy(); }} color={C.red} sm>Retry</Btn>}
+      {/* Touch counter + prior message inspector */}
+      <div style={{ marginBottom: generationBlocked || expanded ? 12 : 0, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+          Touch {touchCount} of {CADENCE.maxTouches}
+        </span>
+        {effectiveType !== "blocked" && (
+          <Pill color={effectiveType === "cold" ? C.amber : effectiveType === "followup" ? C.blue : C.red} sm>
+            Next: {effectiveType === "cold" ? "Cold" : effectiveType === "followup" ? "Follow-up" : "Last bump"}
+          </Pill>
+        )}
+        {outreachHistory.length > 0 && <PriorMessagesInspector history={outreachHistory} />}
       </div>
-      {genError && (
-        <div style={{ marginTop: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
-          <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} — hit Retry</span>
+
+      {/* Blocked state — touch budget exhausted */}
+      {generationBlocked ? (
+        <div style={{ padding: "14px 16px", background: `${C.red}08`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <Dot color={C.red} size={6} />
+            <span style={{ fontFamily: MONO, fontSize: 10, color: C.red, letterSpacing: "0.1em", textTransform: "uppercase" }}>Touch limit reached</span>
+          </div>
+          <p style={{ fontFamily: BODY, fontSize: 12, color: C.sub, margin: "0 0 10px", lineHeight: 1.6 }}>
+            This lead has received {touchCount} message{touchCount === 1 ? "" : "s"} already. Sending more reads as spam and kills future re-engagement. Move to cold — the 90-day system will surface them later with a clean slate.
+          </p>
+          {onSend && <Btn onClick={() => { if (onSend) onSend("cold"); }} color={C.red} sm>Mark cold</Btn>}
         </div>
-      )}
-      {expanded && draft && (
+      ) : (
         <>
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <Label>IG DM</Label>
-              <div style={{ display: "flex", gap: 6 }}>
-                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={handleDmCopy} />
-                {prospect.instagram && (
-                  <a href={prospect.instagram} target="_blank" rel="noreferrer"
-                    style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>
-                    Open IG
-                  </a>
-                )}
-              </div>
-            </div>
-            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: expanded && draft ? 14 : 0 }}>
+            <Btn onClick={() => generateCopy()} loading={generating} color={C.amber} sm>
+              {draft ? (expanded ? "Hide Copy" : "Show Copy") : "Get Copy"}
+            </Btn>
+            {genError && <Btn onClick={() => { setGenError(null); generateCopy(); }} color={C.red} sm>Retry</Btn>}
           </div>
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <Label>Email</Label>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm onCopy={handleEmailCopy} />
-                {prospect.email
-                  ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Cancel" : "Send via Gmail"}</Btn>
-                  : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email in Edit to send</span>
-                }
-              </div>
+          {genError && (
+            <div style={{ marginTop: 8, padding: "8px 12px", background: `${C.red}10`, border: `1px solid ${C.red}30`, borderRadius: 8 }}>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: C.red }}>{genError} — hit Retry</span>
             </div>
-            <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
-            <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
-            {showSend && prospect.email && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
-                  <Dot color={C.green} size={5} />
-                  <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>To: {prospect.email}</span>
+          )}
+          {expanded && draft && (
+            <>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <Label>IG DM</Label>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={handleDmCopy} />
+                    {prospect.instagram && (
+                      <a href={prospect.instagram} target="_blank" rel="noreferrer"
+                        style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>
+                        Open IG
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
+                <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
               </div>
-            )}
-            {sendResult === "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
-            {sendResult && sendResult !== "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed: {sendResult}</p>}
-          </div>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <Label>Email</Label>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm onCopy={handleEmailCopy} />
+                    {prospect.email
+                      ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Cancel" : "Send via Gmail"}</Btn>
+                      : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email in Edit to send</span>
+                    }
+                  </div>
+                </div>
+                <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
+                <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
+                {showSend && prospect.email && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
+                      <Dot color={C.green} size={5} />
+                      <span style={{ fontFamily: MONO, fontSize: 11, color: C.green }}>To: {prospect.email}</span>
+                    </div>
+                    <Btn onClick={handleSend} loading={sending} color={C.green}>Send from trogers@rogers-websolutions.com</Btn>
+                  </div>
+                )}
+                {sendResult === "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
+                {sendResult && sendResult !== "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed: {sendResult}</p>}
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
+  );
+}
+
+// --- PRIOR MESSAGES INSPECTOR -------------------------------------------------
+// Collapsible button that reveals prior outreach so user can see what's been said
+// before generating the next message.
+function PriorMessagesInspector({ history }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ fontFamily: MONO, fontSize: 9, padding: "3px 9px", borderRadius: 20, cursor: "pointer", background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`, color: C.sub }}>
+        {open ? "Hide prior" : `Show prior (${history.length})`}
+      </button>
+      {open && (
+        <div style={{ width: "100%", marginTop: 8, background: "rgba(0,0,0,0.3)", borderRadius: 8, border: `1px solid ${C.border}`, padding: "10px 12px" }}>
+          {history.map((m, i) => (
+            <div key={i} style={{ marginBottom: i < history.length - 1 ? 10 : 0, paddingBottom: i < history.length - 1 ? 10 : 0, borderBottom: i < history.length - 1 ? `1px solid ${C.border}` : "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <Pill color={m.channel === "dm" ? C.purple : C.green} sm>Touch #{m.touchNumber || i + 1} · {m.channel.toUpperCase()}</Pill>
+                {m.sentAt && <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted }}>{new Date(m.sentAt).toLocaleDateString()}</span>}
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: 11, color: C.sub, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{m.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1315,17 +1423,68 @@ function PipelineGridCard({ lead, onUpdate, onRemove, onStatusChange, isSelected
     setEditing(false);
   }
 
-  // Channel stamper — fires from CopyPanel when DM is copied or email is sent/copied.
-  // For COLD generations, message is the cold draft text and gets stored on the lead
-  // as priorDm / priorEmail so future follow-up generations can avoid parroting it.
-  // For follow-up generations, message is null and we don't overwrite the cold capture.
-  function handleChannel(channel, message) {
-    const patch = { lastChannel: channel, lastOutreachAt: new Date().toISOString() };
-    if (message) {
-      if (channel === "dm")    patch.priorDm    = message;
-      if (channel === "email") patch.priorEmail = message;
+  // Channel stamper — fires from CopyPanel when a message is sent/copied.
+  // Pushes the message to outreachHistory and increments outreachCount.
+  // copyTypeUsed is "cold" | "followup" | "secondbump" — tracked on the entry for debugging.
+  function handleChannel(channel, message, copyTypeUsed) {
+    const currentHistory = getOutreachHistory(lead);
+    const currentCount   = getOutreachCount(lead);
+    const newTouch       = currentCount + 1;
+    const entry = {
+      channel,
+      text: message || "",
+      sentAt: new Date().toISOString(),
+      touchNumber: newTouch,
+      copyType: copyTypeUsed || null,
+    };
+    const patch = {
+      lastChannel:     channel,
+      lastOutreachAt:  new Date().toISOString(),
+      outreachHistory: [...currentHistory, entry],
+      outreachCount:   newTouch,
+    };
+    // Auto-transition status based on touch number:
+    // touch 1 → contacted, touch 2 → followup (status only; firstFollowUpAt stamp handled in handleStatusChange path)
+    // touch 3 → still followup; the touch limit check in CopyPanel handles cold transition on next attempt
+    if (newTouch === 1 && lead.status === "new") {
+      patch.status      = "contacted";
+      patch.contactedAt = new Date().toISOString();
+    } else if (newTouch === 2 && (lead.status === "new" || lead.status === "contacted")) {
+      patch.status           = "followup";
+      patch.firstFollowUpAt  = new Date().toISOString();
+      if (!lead.contactedAt) patch.contactedAt = new Date().toISOString();
     }
     onUpdate(lead.id, patch);
+  }
+
+  // Mark cold from the CopyPanel touch-limit block
+  function handleMarkCold() {
+    onStatusChange(lead.id, "cold");
+  }
+
+  // Manual outreach log — backfill messages sent outside the dashboard
+  const [showLogModal, setShowLogModal] = useState(false);
+  function handleManualLog(entry) {
+    const currentHistory = getOutreachHistory(lead);
+    const currentCount   = getOutreachCount(lead);
+    const newTouch       = currentCount + 1;
+    const patch = {
+      lastChannel:     entry.channel,
+      lastOutreachAt:  entry.sentAt,
+      outreachHistory: [...currentHistory, { ...entry, touchNumber: newTouch, copyType: "manual" }],
+      outreachCount:   newTouch,
+    };
+    // Same auto-status transition as handleChannel
+    if (newTouch === 1 && lead.status === "new") {
+      patch.status      = "contacted";
+      patch.contactedAt = entry.sentAt;
+    } else if (newTouch === 2 && (lead.status === "new" || lead.status === "contacted")) {
+      patch.status           = "followup";
+      patch.firstFollowUpAt  = entry.sentAt;
+      if (!lead.contactedAt) patch.contactedAt = entry.sentAt;
+    }
+    onUpdate(lead.id, patch);
+    setShowLogModal(false);
   }
 
   return (
@@ -1340,6 +1499,7 @@ function PipelineGridCard({ lead, onUpdate, onRemove, onStatusChange, isSelected
           <Pill color={s.color} sm>{s.label}</Pill>
           {lead.grade && <Pill color={gc} sm>{lead.grade}</Pill>}
           {lead.lastChannel && <Pill color={lead.lastChannel === "dm" ? C.purple : C.green} sm>{lead.lastChannel === "dm" ? "DM" : "Email"}</Pill>}
+          {getOutreachCount(lead) > 0 && <Pill color={getOutreachCount(lead) >= CADENCE.maxTouches ? C.red : C.muted} sm>{getOutreachCount(lead)}/{CADENCE.maxTouches}</Pill>}
         </div>
         <div style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</div>
         <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginBottom: 3 }}>{lead.city}</div>
@@ -1380,10 +1540,14 @@ function PipelineGridCard({ lead, onUpdate, onRemove, onStatusChange, isSelected
           <div style={{ padding: "8px 13px", display: "flex", gap: 5, flexWrap: "wrap", borderBottom: `1px solid ${C.border}` }}>
             <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>{lead.enriched ? "Re-enrich" : "Enrich"}</Btn>
             <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel" : "Edit"}</Btn>
+            <Btn onClick={() => setShowLogModal(true)} color={C.amber} sm>Log manual outreach</Btn>
             <Btn onClick={() => onRemove(lead.id)} color={C.red} sm>Remove</Btn>
           </div>
           {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
-          {!editing && <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} onChannel={handleChannel} />}
+          {/* CopyPanel handles status auto-transitions internally via handleChannel.
+              onSend("cold") is fired when the touch-limit block's "Mark cold" button is clicked. */}
+          {!editing && <CopyPanel prospect={liveLead} onSend={(action) => { if (action === "cold") handleMarkCold(); }} onChannel={handleChannel} />}
+          {showLogModal && <LogOutreachModal lead={lead} onLog={handleManualLog} onClose={() => setShowLogModal(false)} />}
         </div>
       )}
     </div>
@@ -1499,6 +1663,75 @@ function AddLeadModal({ onAdd, onClose }) {
     </div>
   );
 }
+
+// --- LOG OUTREACH MODAL -------------------------------------------------------
+// Backfill outreach that happened outside the dashboard (manual DMs, copy-paste
+// from another tool, historical messages from before tracking was added).
+// Date defaults to today but is editable so cadence math stays accurate when
+// logging older sends.
+function LogOutreachModal({ lead, onLog, onClose }) {
+  const [channel, setChannel] = useState(lead?.instagram ? "dm" : "email");
+  const [text,    setText]    = useState("");
+  const [date,    setDate]    = useState(new Date().toISOString().slice(0, 10));
+
+  function submit() {
+    if (!text.trim()) return;
+    // Build a sentAt timestamp from the date input (set to noon to avoid TZ edge cases)
+    const sentAt = new Date(`${date}T12:00:00`).toISOString();
+    onLog({ channel, text: text.trim(), sentAt });
+  }
+
+  const inputStyle = { width: "100%", boxSizing: "border-box", background: "rgba(0,0,0,0.4)", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "8px 11px", fontFamily: MONO, fontSize: 12, color: C.text, outline: "none" };
+
+  const currentCount = lead ? getOutreachCount(lead) : 0;
+  const nextTouch    = currentCount + 1;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 14, padding: "26px 28px", width: "100%", maxWidth: 560, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Log manual outreach</span>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontFamily: MONO, fontSize: 13 }}>x</button>
+        </div>
+        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, margin: "0 0 16px", lineHeight: 1.6 }}>
+          Backfill a message you sent outside the dashboard. This counts as touch #{nextTouch} of {CADENCE.maxTouches} and feeds into the no-parrot system on future generations.
+        </p>
+
+        <div style={{ marginBottom: 14 }}>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Channel</p>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[{ id: "dm", label: "IG DM", color: C.purple }, { id: "email", label: "Email", color: C.green }].map(c => (
+              <button key={c.id} onClick={() => setChannel(c.id)}
+                style={{ fontFamily: MONO, fontSize: 11, padding: "6px 14px", borderRadius: 20, cursor: "pointer", background: channel === c.id ? `${c.color}18` : "transparent", border: `1px solid ${channel === c.id ? c.color : C.border}`, color: channel === c.id ? c.color : C.muted }}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Sent on</p>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} max={new Date().toISOString().slice(0, 10)} style={{ ...inputStyle, width: 200 }} />
+        </div>
+
+        <div style={{ marginBottom: 18 }}>
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Message text *</p>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={6} placeholder={channel === "dm" ? "Paste the exact DM you sent..." : "Paste the email you sent (subject + body)..."}
+            style={{ ...inputStyle, resize: "vertical", fontFamily: MONO }} />
+          <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "4px 0 0" }}>
+            Paste exactly what you sent so future AI generations know not to repeat it.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn onClick={submit} disabled={!text.trim()} color={C.green}>Log as touch #{nextTouch}</Btn>
+          <Btn onClick={onClose} color={C.muted}>Cancel</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 // --- PIPELINE MODULE ----------------------------------------------------------
 function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
