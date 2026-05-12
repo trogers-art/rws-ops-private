@@ -736,20 +736,50 @@ function CopyPanel({ prospect, onSend, onChannel, copyType = null, autoGenerate 
 
     const type = copyType || "cold";
 
+    // For follow-ups, pass prior cold message so model avoids parroting it.
+    // priorDm / priorEmail are stamped on the lead when the cold version is copied/sent.
+    const priorDm    = prospect.priorDm    || null;
+    const priorEmail = prospect.priorEmail || null;
+    const hasPriorContext = type !== "cold" && (priorDm || priorEmail);
+
     const typeInstructions =
       type === "secondbump"
-        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. Third and final contact. DM is ONE sentence only — just the door left open and the booking link. No re-pitch. No observation. No explanation of why anything would help them. No value proposition. Email: 2 sentences max, same rules.`
+        ? `Write a SECOND follow-up IG DM and SECOND follow-up email. Third and final contact.
+
+ABSOLUTE RULES — violating any of these makes this read as automated/AI/spam:
+- DM is ONE sentence only. The door left open + the booking link. That is the entire message.
+- Email body is 2 sentences max.
+- DO NOT restate the rating, review count, location, or category. Those data points were already used in the cold message.
+- DO NOT repeat the original pitch sentence ("I build websites for..." / "We build...").
+- DO NOT explain what a website would do for them. No value proposition. No "easier booking", no "showcase", no "help you grow".
+- DO NOT introduce any new observation. This is a closer, not a re-engagement.
+- Use phrasing like "last note from me" or "this is the last one" — it removes pressure and gets disproportionate replies.
+- No urgency. No guilt. No "I get it, you're busy" (that's condescending).`
         : type === "followup"
-          ? `Write a FIRST follow-up IG DM and first follow-up email. They did not respond to cold outreach. STRICT RULES: Do NOT explain why a website, booking form, or any tool would help them. Do NOT pitch a value proposition. Do NOT say what something "could" do for them. One new observation or a soft open door, then the link. That is all. DM is 2 sentences MAX. Email: 2-3 short paragraphs, same rules — observation or door, link, done.`
+          ? `Write a FIRST follow-up IG DM and first follow-up email. They did not respond to cold outreach.
+
+ABSOLUTE RULES — violating any of these makes this read as a mass blast:
+- DO NOT restate the rating, review count, location, or category. Those data points were already used in the cold message. Recipients notice repeat data IMMEDIATELY and it's the #1 signal of automation.
+- DO NOT repeat the original pitch sentence verbatim or near-verbatim. The cold message already said "I build websites for [niche] in OC" or equivalent. Do not say that again.
+- DO NOT explain why a website would help them. No value proposition. No "make booking easier", no "showcase services", no "help you grow", no "more clients", no "online presence".
+- DO NOT use phrases like "if you're interested in exploring", "might look like", "basic", "simple" — these are corporate hedge language.
+- Lead with acknowledgment that the message may have been buried/missed. Plain and direct.
+- You MAY add ONE new factual detail about the OFFER (timeline like "builds usually go live in about a week", what's included like "Google Business Profile setup included", payment terms). NOT a benefit. A FACT.
+- Or skip the new detail entirely and just bump with the link. A 2-sentence "wanted to follow up here in case it got buried, link's still open if useful: rogers-websolutions.com/book" is GOOD copy, not lazy copy.
+- DM is 2 sentences MAX. Email body is 2-3 short paragraphs MAX.`
           : `Write a cold IG DM and cold email for this REAL business. DM rules: 3 sentences MAX. Sentence 1: one specific observation about this business using real data only (rating, review count, category). Sentence 2: open a door — one plain sentence about what RWS does, no problem framing, no gap lecture, no "which means", no pain amplification, no competitor mention. Sentence 3: soft ask with rogers-websolutions.com/book. Cold email: 3-4 short paragraphs. Same rules — observation first, door open second, soft ask close. Do not use "online presence", "digital footprint", "missing out", "losing", "falling behind", or any urgency language.`;
+
+    const priorContextBlock = hasPriorContext
+      ? `\n\nPRIOR COLD MESSAGES ALREADY SENT TO THIS LEAD (do NOT parrot phrasing, observations, or pitch sentences from these — the recipient saw them already):${priorDm ? `\n--- PRIOR DM ---\n${priorDm}` : ""}${priorEmail ? `\n--- PRIOR EMAIL ---\n${priorEmail}` : ""}\n--- END PRIOR ---\n\nYour follow-up must read like a HUMAN bump from someone who already sent the above and is just nudging once more. Do not re-introduce yourself. Do not restate the data points. Do not repeat the pitch.`
+      : "";
 
     const emailLabel = type === "secondbump" ? "Second follow-up" : type === "followup" ? "Follow-up" : "Cold";
     const dmLength   = type === "secondbump" ? "1 sentence ONLY" : type === "followup" ? "1-2 sentences MAX" : "3 sentences MAX";
 
     try {
       const raw = await ai(
-        RWS_CTX + `\n\n${typeInstructions} Return ONLY valid JSON, no backticks:
-{"dm":"${dmLength}. ${type === "cold" ? "Observation first. Open a door second — what RWS does, no problem framing. Soft ask third. No competitor framing. No pain lecture." : "Do NOT re-introduce yourself or repeat the cold pitch. No pain points."} Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"${type !== "cold" ? "Subject that signals follow-up without being passive aggressive" : "Subject line using one specific real data point about the business — not generic"}","emailBody":"${emailLabel} email. ${type === "secondbump" ? "Very short — 2 paragraphs max. No re-pitch." : "3-4 short paragraphs. No urgency language. No competitor framing."} Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
+        RWS_CTX + `\n\n${typeInstructions}${priorContextBlock}\n\nReturn ONLY valid JSON, no backticks:
+{"dm":"${dmLength}. ${type === "cold" ? "Observation first. Open a door second — what RWS does, no problem framing. Soft ask third. No competitor framing. No pain lecture." : "Do NOT re-introduce yourself or repeat the cold pitch. Do NOT restate rating/reviews/location. No pain points. No value framing."} Close with rogers-websolutions.com/book. Final line must be exactly: Trafton @ Rogers Web Solutions","emailSubject":"${type !== "cold" ? "Subject that signals follow-up without being passive aggressive. Examples: 'Following up — [business name]' or 'One more from me — [business name]'. Do NOT reuse the cold email subject line." : "Subject line using one specific real data point about the business — not generic"}","emailBody":"${emailLabel} email. ${type === "secondbump" ? "Very short — 2 sentences max. No re-pitch. No restated data points." : "2-3 short paragraphs. No urgency language. No competitor framing. No restated data points. No repeated pitch sentence."} Close: rogers-websolutions.com/book. Final line must be exactly: Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"}`,
         `Business: ${prospect.name} | City: ${prospect.city} | Category: ${prospect.category} | Rating: ${prospect.rating}* | Reviews: ${prospect.reviews} | ${websiteCtx} | ${contactInfo}${prospect.notes ? ` | Context: ${prospect.notes}` : ""}`
       );
       if (raw.startsWith("Error:")) { setGenError(raw); }
@@ -762,6 +792,12 @@ function CopyPanel({ prospect, onSend, onChannel, copyType = null, autoGenerate 
     setGenerating(false);
   }
 
+  // copyType determines what gets stamped onto the lead:
+  // - "cold" → stamp priorDm/priorEmail (so future follow-ups can avoid parroting)
+  // - "followup" / "secondbump" → don't overwrite the cold message; that's the
+  //   reference text future generations should still avoid copying
+  const isColdGeneration = !copyType || copyType === "cold";
+
   async function handleSend() {
     if (!prospect.email || !draft) return;
     setSending(true); setSendResult(null);
@@ -770,7 +806,9 @@ function CopyPanel({ prospect, onSend, onChannel, copyType = null, autoGenerate 
     if (result.success) {
       setSendResult("sent");
       logOutreach("emails");
-      if (onChannel) onChannel("email");
+      if (onChannel) {
+        onChannel("email", isColdGeneration ? `Subject: ${draft.emailSubject}\n\n${draft.emailBody}` : null);
+      }
       if (onSend) onSend();
     }
     else { setSendResult(result.error || "unknown error"); }
@@ -778,7 +816,15 @@ function CopyPanel({ prospect, onSend, onChannel, copyType = null, autoGenerate 
 
   function handleDmCopy() {
     logOutreach("dms");
-    if (onChannel) onChannel("dm");
+    if (onChannel) {
+      onChannel("dm", isColdGeneration ? draft?.dm : null);
+    }
+  }
+
+  function handleEmailCopy() {
+    if (onChannel && isColdGeneration && draft) {
+      onChannel("email", `Subject: ${draft.emailSubject}\n\n${draft.emailBody}`);
+    }
   }
 
   return (
@@ -815,7 +861,7 @@ function CopyPanel({ prospect, onSend, onChannel, copyType = null, autoGenerate 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>Email</Label>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
+                <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm onCopy={handleEmailCopy} />
                 {prospect.email
                   ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Cancel" : "Send via Gmail"}</Btn>
                   : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email in Edit to send</span>
@@ -1269,9 +1315,17 @@ function PipelineGridCard({ lead, onUpdate, onRemove, onStatusChange, isSelected
     setEditing(false);
   }
 
-  // Channel stamper — fires from CopyPanel when DM is copied or email is sent
-  function handleChannel(channel) {
-    onUpdate(lead.id, { lastChannel: channel, lastOutreachAt: new Date().toISOString() });
+  // Channel stamper — fires from CopyPanel when DM is copied or email is sent/copied.
+  // For COLD generations, message is the cold draft text and gets stored on the lead
+  // as priorDm / priorEmail so future follow-up generations can avoid parroting it.
+  // For follow-up generations, message is null and we don't overwrite the cold capture.
+  function handleChannel(channel, message) {
+    const patch = { lastChannel: channel, lastOutreachAt: new Date().toISOString() };
+    if (message) {
+      if (channel === "dm")    patch.priorDm    = message;
+      if (channel === "email") patch.priorEmail = message;
+    }
+    onUpdate(lead.id, patch);
   }
 
   return (
