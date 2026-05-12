@@ -35,6 +35,13 @@ const STATUS = {
 
 const GRADE_COLOR = { A: C.green, B: C.amber, C: C.blue, D: C.muted };
 
+// 3-7-7 cadence — first follow-up at day 3, second bump at +7d, re-engage at +90d cold
+const CADENCE = {
+  firstFollowUpDays:  3,   // days after contactedAt to surface first follow-up
+  secondBumpDays:     7,   // days after firstFollowUpAt to surface second bump
+  reEngageDays:       90,  // days after coldAt to re-surface
+};
+
 const TECH_TOPICS = [
   "AI/LLM tooling, inference optimization, or agent frameworks",
   "Network observability, eBPF, or modern monitoring stacks",
@@ -303,7 +310,7 @@ async function loadDismissed() {
   } catch { return new Set(); }
 }
 
-// --- FOLLOW-UP HELPERS -------------------------------------------------------
+// --- FOLLOW-UP HELPERS (3-7-7 cadence) ---------------------------------------
 function daysSince(isoStr) {
   if (!isoStr) return null;
   const ts = Date.parse(isoStr);
@@ -311,15 +318,42 @@ function daysSince(isoStr) {
   return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
 }
 
+// 3-7-7 cadence:
+// - Day 0: status set to "contacted", contactedAt stamped
+// - Day 3+: surface "first follow-up due" (was day 4)
+// - When status flips to "followup", firstFollowUpAt is stamped
+// - 7+ days after firstFollowUpAt: surface "second bump due" (was 4 days after first)
+// Total cadence: contact → +3d → +7d = day 10, matching the research's "93% of replies by day 10"
 function followUpStatus(lead) {
-  if (!["contacted", "followup"].includes(lead.status)) return null;
-  if (!lead.contactedAt) return null;
-  const days = daysSince(lead.contactedAt);
-  if (days === null) return null;
-  if (lead.status === "contacted" && days >= 4) return { label: `${days}d — follow-up due`,   color: C.amber, urgent: true  };
-  if (lead.status === "followup"  && days >= 4) return { label: `${days}d — second bump due`, color: C.red,   urgent: true  };
-  if (lead.status === "contacted" && days >= 2) return { label: `${days}d — sent`,            color: C.blue,  urgent: false };
-  return { label: `${days}d since contact`, color: C.muted, urgent: false };
+  if (lead.status === "contacted") {
+    const days = daysSince(lead.contactedAt);
+    if (days === null) return null;
+    if (days >= CADENCE.firstFollowUpDays) return { label: `${days}d — follow-up due`, color: C.amber, urgent: true };
+    if (days >= 1)                          return { label: `${days}d — sent`,         color: C.blue,  urgent: false };
+    return { label: `sent today`, color: C.blue, urgent: false };
+  }
+  if (lead.status === "followup") {
+    // Prefer firstFollowUpAt; fall back to contactedAt for legacy leads that pre-date the new field
+    const anchor = lead.firstFollowUpAt || lead.contactedAt;
+    const days   = daysSince(anchor);
+    if (days === null) return null;
+    if (days >= CADENCE.secondBumpDays) return { label: `${days}d — second bump due`, color: C.red,   urgent: true };
+    return { label: `${days}d since follow-up`, color: C.muted, urgent: false };
+  }
+  return null;
+}
+
+// 90-day re-engage check for cold leads
+function isReEngageReady(lead) {
+  if (lead.status !== "cold") return false;
+  const anchor = lead.coldAt || lead.contactedAt;
+  const days   = daysSince(anchor);
+  return days !== null && days >= CADENCE.reEngageDays;
+}
+
+function daysCold(lead) {
+  if (lead.status !== "cold") return null;
+  return daysSince(lead.coldAt || lead.contactedAt);
 }
 
 // --- SHARED UI ----------------------------------------------------------------
@@ -380,7 +414,6 @@ function CopyBtn({ text, label = "Copy", sm, onCopy }) {
   return <Btn onClick={copy} color={copied ? C.green : C.muted} sm={sm}>{copied ? "Copied" : label}</Btn>;
 }
 
-// Collapsible section wrapper used throughout
 function Section({ title, color = C.muted, count, defaultOpen = false, children, urgentBorder = false }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -663,7 +696,9 @@ function EditPanel({ data, onChange, onSave, onCancel }) {
 }
 
 // --- COPY PANEL ---------------------------------------------------------------
-function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) {
+// onChannel(channel) fires when DM is copied or email is sent — used by Pipeline
+// cards to stamp lastChannel on the lead for channel-performance analytics.
+function CopyPanel({ prospect, onSend, onChannel, copyType = null, autoGenerate = false }) {
   const [draft,      setDraft]      = useState(null);
   const [generating, setGenerating] = useState(false);
   const [genError,   setGenError]   = useState(null);
@@ -732,8 +767,18 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
     setSending(true); setSendResult(null);
     const result = await sendEmail(prospect.email, draft.emailSubject, draft.emailBody);
     setSending(false);
-    if (result.success) { setSendResult("sent"); logOutreach("emails"); if (onSend) onSend(); }
+    if (result.success) {
+      setSendResult("sent");
+      logOutreach("emails");
+      if (onChannel) onChannel("email");
+      if (onSend) onSend();
+    }
     else { setSendResult(result.error || "unknown error"); }
+  }
+
+  function handleDmCopy() {
+    logOutreach("dms");
+    if (onChannel) onChannel("dm");
   }
 
   return (
@@ -755,7 +800,7 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Label>IG DM</Label>
               <div style={{ display: "flex", gap: 6 }}>
-                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={() => logOutreach("dms")} />
+                <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={handleDmCopy} />
                 {prospect.instagram && (
                   <a href={prospect.instagram} target="_blank" rel="noreferrer"
                     style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>
@@ -798,7 +843,6 @@ function CopyPanel({ prospect, onSend, copyType = null, autoGenerate = false }) 
 }
 
 // --- LEAD GRID CARD -----------------------------------------------------------
-// Compact card for the 3-col grid. Click to expand action tray below.
 function LeadGridCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss, isSelected, onSelect }) {
   const [prospect,  setProspect]  = useState(initialProspect);
   const [enriching, setEnriching] = useState(false);
@@ -853,10 +897,8 @@ function LeadGridCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss,
         <div style={{ fontFamily: MONO, fontSize: 9, color: gc, marginTop: 4, lineHeight: 1.4 }}>{prospect.gradeReason}</div>
       </div>
 
-      {/* Expanded tray — only shown when this card is selected */}
       {isSelected && (
         <div onClick={e => e.stopPropagation()} style={{ borderTop: `1px solid ${C.border}` }}>
-          {/* Contact info row */}
           <div style={{ padding: "10px 13px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${C.border}` }}>
             {prospect.email && <span style={{ fontFamily: MONO, fontSize: 10, color: C.green }}>{prospect.email}</span>}
             {prospect.instagram && <a href={prospect.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{prospect.instagramHandle || "Instagram"}</a>}
@@ -864,7 +906,6 @@ function LeadGridCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss,
             {prospect.website && <a href={prospect.website} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.sub, textDecoration: "none" }}>{prospect.websiteType === "link_in_bio" ? "Link-in-bio" : "Website"}</a>}
             {!prospect.email && !prospect.instagram && <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>No contact found — hit Enrich</span>}
           </div>
-          {/* Action buttons */}
           <div style={{ padding: "10px 13px", display: "flex", gap: 6, flexWrap: "wrap" }}>
             <Btn onClick={() => onAdd(prospect)} disabled={inPipeline} color={inPipeline ? C.purple : C.green} sm>{inPipeline ? "In Pipeline" : "+ Pipeline"}</Btn>
             <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>{isEnriched ? "Re-enrich" : "Enrich"}</Btn>
@@ -882,10 +923,7 @@ function LeadGridCard({ prospect: initialProspect, onAdd, inPipeline, onDismiss,
 // --- LEAD GRADE GROUP --------------------------------------------------------
 function LeadGradeGroup({ grade, label, color, items, onAdd, pipelineNames, onDismiss, defaultOpen }) {
   const [selectedName, setSelectedName] = useState(null);
-
-  function handleSelect(name) {
-    setSelectedName(prev => prev === name ? null : name);
-  }
+  function handleSelect(name) { setSelectedName(prev => prev === name ? null : name); }
 
   return (
     <Section title={label} color={color} count={items.length} defaultOpen={defaultOpen}>
@@ -999,9 +1037,7 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-      {/* Search controls */}
       <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 12, padding: "18px 20px" }}>
-        {/* Niche chips — collapsible */}
         <div style={{ marginBottom: 14 }}>
           <button onClick={() => setNichesOpen(o => !o)}
             style={{ display: "flex", alignItems: "center", gap: 8, background: "transparent", border: "none", cursor: "pointer", padding: 0, marginBottom: nichesOpen ? 12 : 0 }}>
@@ -1036,7 +1072,6 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
           )}
         </div>
 
-        {/* Search fields */}
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <div style={{ flex: 2 }}>
             <Field value={niche} onChange={v => setState(s => ({ ...s, niche: v }))} placeholder="nail salons, handyman, motels..." onKeyDown={e => e.key === "Enter" && search()} />
@@ -1056,7 +1091,6 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
         {error && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "10px 0 0" }}>Error: {error}</p>}
       </div>
 
-      {/* Auto-pipeline log */}
       {showAutoLog && autoLog.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "14px 18px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -1080,17 +1114,14 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
         </div>
       )}
 
-      {/* Loading state */}
       {loading && (
         <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "16px 20px" }}>
           <p style={{ fontFamily: MONO, fontSize: 12, color: C.muted, margin: 0 }}><span style={{ animation: "blink 0.9s step-start infinite" }}>Pulling businesses from Google Maps...</span></p>
         </div>
       )}
 
-      {/* Results */}
       {!loading && visible.length > 0 && (
         <>
-          {/* Stats strip */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
             {[{ label: "Total", val: visible.length, color: C.sub }, { label: "No Site", val: noSite.length, color: C.green }, { label: "Grade A", val: aGrade.length, color: C.green }, { label: "Grade B", val: bGrade.length, color: C.amber }, { label: "Grade C", val: cGrade.length, color: C.blue }].map(s => (
               <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
@@ -1100,7 +1131,6 @@ function LeadScraper({ state, setState, onAdd, pipelineNames }) {
             ))}
           </div>
 
-          {/* Grade groups */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {gradeGroups.map(g => (
               <LeadGradeGroup
@@ -1214,9 +1244,11 @@ function PipelineGridCard({ lead, onUpdate, onRemove, onStatusChange, isSelected
     setEditData({ email: lead.email || "", instagram: lead.instagram || "", instagramHandle: lead.instagramHandle || "", website: lead.website || "", hasWebsite: lead.hasWebsite ?? false, websiteType: lead.websiteType || "", notes: lead.notes || "" });
   }, [lead.id]);
 
-  const s      = STATUS[lead.status];
-  const fu     = followUpStatus(lead);
-  const gc     = GRADE_COLOR[lead.grade] || C.muted;
+  const s        = STATUS[lead.status];
+  const fu       = followUpStatus(lead);
+  const gc       = GRADE_COLOR[lead.grade] || C.muted;
+  const coldDays = daysCold(lead);
+  const reEngage = isReEngageReady(lead);
   const liveLead = { ...lead, email: editData.email.trim() || lead.email || null, instagram: editData.instagram.trim() || lead.instagram || null, instagramHandle: editData.instagramHandle.trim() || lead.instagramHandle || null, notes: editData.notes.trim() || lead.notes || null, websiteType: editData.websiteType || lead.websiteType || null };
 
   async function handleEnrich() {
@@ -1237,35 +1269,52 @@ function PipelineGridCard({ lead, onUpdate, onRemove, onStatusChange, isSelected
     setEditing(false);
   }
 
+  // Channel stamper — fires from CopyPanel when DM is copied or email is sent
+  function handleChannel(channel) {
+    onUpdate(lead.id, { lastChannel: channel, lastOutreachAt: new Date().toISOString() });
+  }
+
   return (
     <div
       onClick={() => !editing && onSelect()}
-      style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : isSelected ? "rgba(255,255,255,0.2)" : C.border2}`, borderRadius: 8, overflow: "hidden", cursor: editing ? "default" : "pointer", transition: "border-color 0.12s" }}
+      style={{ background: C.card, border: `1px solid ${fu?.urgent ? C.amber + "50" : reEngage ? C.amber + "50" : isSelected ? "rgba(255,255,255,0.2)" : C.border2}`, borderRadius: 8, overflow: "hidden", cursor: editing ? "default" : "pointer", transition: "border-color 0.12s" }}
     >
       <div style={{ padding: "11px 13px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, flexWrap: "wrap" }}>
           {fu?.urgent && <Dot color={lead.status === "followup" ? C.red : C.amber} size={6} pulse />}
+          {reEngage && <Dot color={C.amber} size={6} pulse />}
           <Pill color={s.color} sm>{s.label}</Pill>
           {lead.grade && <Pill color={gc} sm>{lead.grade}</Pill>}
+          {lead.lastChannel && <Pill color={lead.lastChannel === "dm" ? C.purple : C.green} sm>{lead.lastChannel === "dm" ? "DM" : "Email"}</Pill>}
         </div>
         <div style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</div>
         <div style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginBottom: 3 }}>{lead.city}</div>
         {lead.rating > 0 && <div style={{ fontFamily: MONO, fontSize: 10, color: C.amber }}>★ {lead.rating} ({lead.reviews})</div>}
         {fu && <div style={{ fontFamily: MONO, fontSize: 9, color: fu.color, marginTop: 3 }}>{fu.label}</div>}
+        {coldDays !== null && !fu && (
+          <div style={{ fontFamily: MONO, fontSize: 9, color: reEngage ? C.amber : C.muted, marginTop: 3 }}>
+            {reEngage ? `${coldDays}d cold — ready to re-engage` : `${coldDays}d cold`}
+          </div>
+        )}
         {lead.notes && <div style={{ fontFamily: MONO, fontSize: 9, color: C.sub, marginTop: 3, fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.notes}</div>}
       </div>
 
       {isSelected && (
         <div onClick={e => e.stopPropagation()} style={{ borderTop: `1px solid ${C.border}` }}>
-          {/* Contact + links */}
           <div style={{ padding: "9px 13px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderBottom: `1px solid ${C.border}` }}>
             {lead.email && <span style={{ fontFamily: MONO, fontSize: 10, color: C.green }}>{lead.email}</span>}
             {lead.instagram && <a href={lead.instagram} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.purple, textDecoration: "none" }}>{lead.instagramHandle || "Instagram"}</a>}
             {lead.phone && <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{lead.phone}</span>}
             {lead.mapsUrl && <a href={lead.mapsUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.blue, textDecoration: "none" }}>Maps</a>}
             <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Added {new Date(lead.addedAt).toLocaleDateString()}</span>
+            {lead.lastOutreachAt && <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Last touch {new Date(lead.lastOutreachAt).toLocaleDateString()} ({lead.lastChannel})</span>}
           </div>
-          {/* Status chips */}
+          {/* Re-engage quick action */}
+          {reEngage && (
+            <div style={{ padding: "9px 13px", background: `${C.amber}06`, borderBottom: `1px solid ${C.border}` }}>
+              <Btn onClick={() => onStatusChange(lead.id, "new")} color={C.amber} sm>Re-engage — move to New</Btn>
+            </div>
+          )}
           <div style={{ padding: "8px 13px", display: "flex", gap: 4, flexWrap: "wrap", borderBottom: `1px solid ${C.border}` }}>
             {Object.entries(STATUS).map(([id, st]) => (
               <button key={id} onClick={() => onStatusChange(lead.id, id)}
@@ -1274,14 +1323,13 @@ function PipelineGridCard({ lead, onUpdate, onRemove, onStatusChange, isSelected
               </button>
             ))}
           </div>
-          {/* Actions */}
           <div style={{ padding: "8px 13px", display: "flex", gap: 5, flexWrap: "wrap", borderBottom: `1px solid ${C.border}` }}>
             <Btn onClick={handleEnrich} loading={enriching} color={C.blue} sm>{lead.enriched ? "Re-enrich" : "Enrich"}</Btn>
             <Btn onClick={() => setEditing(e => !e)} color={C.purple} sm>{editing ? "Cancel" : "Edit"}</Btn>
             <Btn onClick={() => onRemove(lead.id)} color={C.red} sm>Remove</Btn>
           </div>
           {editing && <EditPanel data={editData} onChange={setEditData} onSave={saveEdit} onCancel={() => setEditing(false)} />}
-          {!editing && <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} />}
+          {!editing && <CopyPanel prospect={liveLead} onSend={() => onStatusChange(lead.id, "contacted")} onChannel={handleChannel} />}
         </div>
       )}
     </div>
@@ -1291,13 +1339,8 @@ function PipelineGridCard({ lead, onUpdate, onRemove, onStatusChange, isSelected
 // --- PIPELINE GRID GROUP -----------------------------------------------------
 function PipelineGridGroup({ title, color, leads, onUpdate, onRemove, onStatusChange, defaultOpen = false, urgentBorder = false }) {
   const [selectedId, setSelectedId] = useState(null);
-
-  function handleSelect(id) {
-    setSelectedId(prev => prev === id ? null : id);
-  }
-
+  function handleSelect(id) { setSelectedId(prev => prev === id ? null : id); }
   if (leads.length === 0) return null;
-
   return (
     <Section title={title} color={color} count={leads.length} defaultOpen={defaultOpen} urgentBorder={urgentBorder}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 7 }}>
@@ -1413,15 +1456,34 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
 
   useEffect(() => { ensureAnalyticsLoaded().then(() => setWeekLog(getWeekLog())); }, []);
 
-  const followUps  = pipeline.filter(l => followUpStatus(l)?.urgent);
-  const warmLeads  = pipeline.filter(l => l.status === "warm");
-  const newLeads   = pipeline.filter(l => l.status === "new");
-  const contacted  = pipeline.filter(l => l.status === "contacted" && !followUpStatus(l)?.urgent);
-  const coldClosed = pipeline.filter(l => ["cold","closed"].includes(l.status));
+  const followUps    = pipeline.filter(l => followUpStatus(l)?.urgent);
+  const reEngageReady = pipeline.filter(isReEngageReady);
+  const warmLeads    = pipeline.filter(l => l.status === "warm");
+  const newLeads     = pipeline.filter(l => l.status === "new");
+  const contacted    = pipeline.filter(l => l.status === "contacted" && !followUpStatus(l)?.urgent);
+  // Cold/closed list excludes leads already surfaced in re-engage section
+  const coldClosed   = pipeline.filter(l => ["cold","closed"].includes(l.status) && !isReEngageReady(l));
 
   function handleStatusChange(id, newStatus) {
     const patch = { status: newStatus };
-    if (newStatus === "contacted" || newStatus === "followup") patch.contactedAt = new Date().toISOString();
+    const now   = new Date().toISOString();
+    if (newStatus === "contacted") {
+      patch.contactedAt = now;
+      // Clear follow-up anchor in case lead is being recycled from cold/followup back to contacted
+      patch.firstFollowUpAt = null;
+    }
+    if (newStatus === "followup") {
+      // Stamp firstFollowUpAt only if not already set (preserves accurate +7d math on repeat clicks)
+      const lead = pipeline.find(l => l.id === id);
+      if (!lead?.firstFollowUpAt) patch.firstFollowUpAt = now;
+    }
+    if (newStatus === "cold") {
+      patch.coldAt = now;
+    }
+    if (newStatus === "new") {
+      // Re-engaging from cold — clear cold marker so the 90d clock doesn't double-fire
+      patch.coldAt = null;
+    }
     onUpdate(id, patch);
   }
 
@@ -1444,8 +1506,8 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
   const filteredAll = filter === "all" ? pipeline : pipeline.filter(l => l.status === filter);
   const visibleAll  = sortLeads(filteredAll);
 
-  const active    = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
-  const closedCt  = pipeline.filter(l => l.status === "closed").length;
+  const active      = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
+  const closedCt    = pipeline.filter(l => l.status === "closed").length;
   const contactedCt = pipeline.filter(l => l.status !== "new").length;
 
   const SORT_OPTIONS = [
@@ -1457,7 +1519,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-      {/* Stat strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
         {[{ label: "Total", val: pipeline.length, color: C.sub }, { label: "Active", val: active, color: C.green }, { label: "Contacted", val: contactedCt, color: C.blue }, { label: "Closed", val: closedCt, color: C.purple }].map(s => (
           <div key={s.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px", textAlign: "center" }}>
@@ -1467,7 +1528,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
         ))}
       </div>
 
-      {/* Outreach log */}
       <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
           <Label>Outreach log</Label>
@@ -1495,10 +1555,23 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
         </div>
       ) : (
         <>
-          {/* Follow-ups due — always open */}
+          {/* Re-engage (90d+ cold) — top priority, always open */}
+          {reEngageReady.length > 0 && (
+            <PipelineGridGroup
+              title="Re-engage (90d+ cold)"
+              color={C.amber}
+              leads={sortLeads(reEngageReady)}
+              onUpdate={onUpdate}
+              onRemove={onRemove}
+              onStatusChange={handleStatusChange}
+              defaultOpen={true}
+            />
+          )}
+
+          {/* Follow-ups due — 3-7-7 cadence */}
           {followUps.length > 0 && (
             <PipelineGridGroup
-              title={`Follow-ups due`}
+              title="Follow-ups due"
               color={C.red}
               leads={sortLeads(followUps)}
               onUpdate={onUpdate}
@@ -1509,7 +1582,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
             />
           )}
 
-          {/* Warm leads */}
           {warmLeads.length > 0 && (
             <PipelineGridGroup
               title="Warm leads"
@@ -1522,7 +1594,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
             />
           )}
 
-          {/* New leads */}
           {newLeads.length > 0 && (
             <PipelineGridGroup
               title="New"
@@ -1535,7 +1606,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
             />
           )}
 
-          {/* In contact (not urgent) */}
           {contacted.length > 0 && (
             <PipelineGridGroup
               title="In contact"
@@ -1548,7 +1618,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
             />
           )}
 
-          {/* Cold / closed */}
           {coldClosed.length > 0 && (
             <PipelineGridGroup
               title="Cold / closed"
@@ -1561,7 +1630,6 @@ function PipelineModule({ pipeline, onUpdate, onRemove, onAdd }) {
             />
           )}
 
-          {/* All leads with filter/sort */}
           <div style={{ background: C.card, border: `1px solid ${C.border2}`, borderRadius: 10, padding: "12px 16px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
               <span style={{ fontFamily: MONO, fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", flexShrink: 0 }}>Filter</span>
@@ -2032,6 +2100,29 @@ function AnalyticsModule({ pipeline }) {
   const warm      = pipeline.filter(l => ["warm","closed"].includes(l.status)).length;
   const closed    = pipeline.filter(l => l.status === "closed").length;
 
+  // --- Channel performance --------------------------------------------------
+  // Slices pipeline by lastChannel ("dm" or "email") and reports funnel rates per channel.
+  // Only counts leads that have at least one outreach touch (status != new AND has lastChannel).
+  function channelStats(channel) {
+    const touched = pipeline.filter(l => l.lastChannel === channel && l.status !== "new");
+    const reply   = touched.filter(l => ["warm","closed","followup"].includes(l.status)).length;
+    const warm    = touched.filter(l => ["warm","closed"].includes(l.status)).length;
+    const closed  = touched.filter(l => l.status === "closed").length;
+    return {
+      touched: touched.length,
+      reply,
+      replyPct:  touched.length ? Math.round((reply  / touched.length) * 100) : 0,
+      warm,
+      warmPct:   touched.length ? Math.round((warm   / touched.length) * 100) : 0,
+      closed,
+      closedPct: touched.length ? Math.round((closed / touched.length) * 100) : 0,
+    };
+  }
+  const dmStats     = channelStats("dm");
+  const emailStats  = channelStats("email");
+  const noChannelCt = pipeline.filter(l => l.status !== "new" && !l.lastChannel).length;
+  const hasChannelData = dmStats.touched + emailStats.touched > 0;
+
   const outreachDays = Array.from({ length: 30 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (29 - i));
     const key = d.toLocaleDateString("en-CA");
@@ -2094,6 +2185,74 @@ function AnalyticsModule({ pipeline }) {
           </>
         )}
       </Card>
+
+      {/* Channel Performance — new card */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <Dot color={C.teal} />
+          <span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Channel Performance</span>
+          <Pill color={C.muted} sm>Per-lead conversion by channel</Pill>
+        </div>
+        <p style={{ fontFamily: MONO, fontSize: 10, color: C.muted, margin: "0 0 16px", lineHeight: 1.6 }}>
+          Tracks how leads progress after their first outreach via DM vs Email. Channel stamped when you copy a DM or send an email from the lead's pipeline card.
+        </p>
+        {!hasChannelData ? (
+          <p style={{ fontFamily: MONO, fontSize: 11, color: "rgba(255,255,255,0.13)", margin: 0 }}>
+            No channel data yet — channel is stamped when you copy a DM or send an email from a Pipeline card.
+            {noChannelCt > 0 && ` ${noChannelCt} contacted lead${noChannelCt === 1 ? "" : "s"} missing channel attribution.`}
+          </p>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {[
+                { label: "Instagram DM", stats: dmStats,    color: C.purple },
+                { label: "Email",        stats: emailStats, color: C.green  },
+              ].map(({ label, stats, color }) => (
+                <div key={label} style={{ background: C.cardHi, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                    <Dot color={color} size={6} />
+                    <span style={{ fontFamily: BODY, fontSize: 13, fontWeight: 600, color: C.text }}>{label}</span>
+                    <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted, marginLeft: "auto" }}>{stats.touched} touched</span>
+                  </div>
+                  {stats.touched === 0 ? (
+                    <p style={{ fontFamily: MONO, fontSize: 11, color: C.muted, margin: 0 }}>No data yet</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {[
+                        { metric: "Reply rate", count: stats.reply,   pct: stats.replyPct,   color: C.blue },
+                        { metric: "Warm rate",  count: stats.warm,    pct: stats.warmPct,    color: C.green },
+                        { metric: "Close rate", count: stats.closed,  pct: stats.closedPct,  color: C.purple },
+                      ].map(row => (
+                        <div key={row.metric} style={{ display: "grid", gridTemplateColumns: "80px 1fr 50px", gap: 8, alignItems: "center" }}>
+                          <span style={{ fontFamily: MONO, fontSize: 10, color: C.sub }}>{row.metric}</span>
+                          <div style={{ height: 5, background: "rgba(255,255,255,0.05)", borderRadius: 3, overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${row.pct}%`, background: row.color, borderRadius: 3, transition: "width 0.4s ease" }} />
+                          </div>
+                          <span style={{ fontFamily: MONO, fontSize: 10, color: row.color, textAlign: "right" }}>{row.pct}% ({row.count})</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {dmStats.touched > 0 && emailStats.touched > 0 && (
+              <div style={{ padding: "10px 14px", background: `${C.amber}06`, borderRadius: 8, border: `1px solid ${C.amber}20` }}>
+                <span style={{ fontFamily: MONO, fontSize: 10, color: C.amber, letterSpacing: "0.1em" }}>BENCHMARK  </span>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: C.sub, lineHeight: 1.6 }}>
+                  Industry: IG DM ~13% reply / 3% close · Cold email ~3-5% reply / 1% close. Your numbers above {dmStats.touched + emailStats.touched < 20 ? "are early — need 20+ touched leads per channel to be meaningful" : "are statistically meaningful"}.
+                </span>
+              </div>
+            )}
+            {noChannelCt > 0 && (
+              <p style={{ fontFamily: MONO, fontSize: 9, color: C.muted, margin: "10px 0 0", fontStyle: "italic" }}>
+                Note: {noChannelCt} contacted lead{noChannelCt === 1 ? "" : "s"} missing channel attribution (contacted before tracking added or marked via manual + DM/Email buttons).
+              </p>
+            )}
+          </>
+        )}
+      </Card>
+
       <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Dot color={C.purple} /><span style={{ fontFamily: BODY, fontSize: 16, fontWeight: 700, color: C.text }}>Outreach Activity</span><Pill color={C.muted} sm>30 days</Pill></div>
@@ -2150,15 +2309,25 @@ function AnalyticsModule({ pipeline }) {
 
 // --- SIDEBAR ------------------------------------------------------------------
 function Sidebar({ activeTab, onTabChange, pipeline }) {
-  const followUpDue   = pipeline.filter(l => followUpStatus(l)?.urgent).length;
+  const followUpDue    = pipeline.filter(l => followUpStatus(l)?.urgent).length;
+  const reEngageReady  = pipeline.filter(isReEngageReady).length;
   const activePipeline = pipeline.filter(l => !["closed","cold"].includes(l.status)).length;
+
+  // Badge priority: re-engage > follow-ups > active count
+  const pipelineBadge = reEngageReady > 0
+    ? { text: `${reEngageReady} re-engage`, color: C.amber }
+    : followUpDue > 0
+      ? { text: `${followUpDue} due`, color: C.red }
+      : activePipeline > 0
+        ? { text: `${activePipeline}`, color: C.green }
+        : null;
 
   const sections = [
     {
       label: "Outreach",
       items: [
         { id: "leads",    label: "Leads",    dot: C.amber  },
-        { id: "pipeline", label: "Pipeline", dot: followUpDue > 0 ? C.red : C.green, badge: followUpDue > 0 ? `${followUpDue} due` : (activePipeline > 0 ? `${activePipeline}` : null), badgeColor: followUpDue > 0 ? C.red : C.green },
+        { id: "pipeline", label: "Pipeline", dot: pipelineBadge?.color || C.green, badge: pipelineBadge?.text, badgeColor: pipelineBadge?.color },
         { id: "outreach", label: "Copy",     dot: C.purple },
       ],
     },
@@ -2180,7 +2349,6 @@ function Sidebar({ activeTab, onTabChange, pipeline }) {
 
   return (
     <div style={{ width: 192, flexShrink: 0, background: C.sidebar, borderRight: `1px solid ${C.border2}`, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 }}>
-      {/* Brand */}
       <div style={{ padding: "16px 16px 14px", borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
           <Dot color={C.green} pulse size={7} />
@@ -2189,7 +2357,6 @@ function Sidebar({ activeTab, onTabChange, pipeline }) {
         <div style={{ fontFamily: MONO, fontSize: 9, color: C.muted, paddingLeft: 15 }}>ops.rogers-websolutions.com</div>
       </div>
 
-      {/* Nav sections */}
       <div style={{ flex: 1, overflowY: "auto", padding: "10px 0" }}>
         {sections.map((section, si) => (
           <div key={section.label}>
@@ -2211,7 +2378,6 @@ function Sidebar({ activeTab, onTabChange, pipeline }) {
         ))}
       </div>
 
-      {/* Status footer */}
       <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.border}` }}>
         {[{ color: C.green, label: "AI connected" }, { color: C.green, label: "Pipeline synced" }].map(s => (
           <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -2258,15 +2424,15 @@ function CommandCenter({ prepData }) {
 
   const pipelineNames  = new Set(pipeline.map(l => l.name));
   const followUpDue    = pipeline.filter(l => followUpStatus(l)?.urgent).length;
+  const reEngageReady  = pipeline.filter(isReEngageReady).length;
 
-  // Panel header info per tab
   const PANEL_HEADERS = {
     leads:     { title: "Leads",           sub: leadsState.prospects.length > 0 ? `${leadsState.prospects.length} results` : "Google Maps real data" },
-    pipeline:  { title: "Pipeline",        sub: `${pipeline.length} total${followUpDue > 0 ? ` · ${followUpDue} follow-ups due` : ""}` },
+    pipeline:  { title: "Pipeline",        sub: `${pipeline.length} total${followUpDue > 0 ? ` · ${followUpDue} follow-ups due` : ""}${reEngageReady > 0 ? ` · ${reEngageReady} ready to re-engage` : ""}` },
     outreach:  { title: "Copy Generator",  sub: "IG DMs · emails · follow-ups" },
     proposal:  { title: "Proposals",       sub: "AI-drafted in your voice" },
     clients:   { title: "Clients",         sub: "Active accounts + check-in tracker" },
-    analytics: { title: "Analytics",       sub: "Pipeline funnel + outreach activity" },
+    analytics: { title: "Analytics",       sub: "Funnel · channel performance · activity" },
     hashtags:  { title: "Hashtags",        sub: "Instagram sets" },
   };
 
@@ -2278,9 +2444,7 @@ function CommandCenter({ prepData }) {
 
       <Sidebar activeTab={tab} onTabChange={setTab} pipeline={pipeline} />
 
-      {/* Main content */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh", overflow: "hidden" }}>
-        {/* Panel header */}
         <div style={{ borderBottom: `1px solid ${C.border}`, padding: "14px 24px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div style={{ fontFamily: MONO, fontSize: 11, color: C.text, letterSpacing: "0.08em", textTransform: "uppercase" }}>{header.title}</div>
@@ -2298,7 +2462,6 @@ function CommandCenter({ prepData }) {
           </div>
         </div>
 
-        {/* Scrollable panel body */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
           <div style={{ display: tab === "leads"     ? "block" : "none" }}><LeadScraper    state={leadsState}    setState={setLeadsState}    onAdd={addToPipeline} pipelineNames={pipelineNames} /></div>
           <div style={{ display: tab === "outreach"  ? "block" : "none" }}><OutreachModule state={outreachState} setState={setOutreachState} pipeline={pipeline} /></div>
