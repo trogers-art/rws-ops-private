@@ -845,17 +845,26 @@ ABSOLUTE RULES — violating any of these makes this read as a mass blast:
     setGenerating(false);
   }
 
-  // CopyPanel always reports back the message text + which copyType produced it.
-  // Parent (PipelineGridCard) pushes the entry to outreachHistory and increments outreachCount.
-  // The legacy isColdGeneration flag is removed — every send is captured.
+  // Option B model — copy is just copy. "Mark sent" is the action that advances state.
+  // Tracks which channel(s) the user marked as sent so each can only be stamped once per draft.
+  const [sentDm,    setSentDm]    = useState(false);
+  const [sentEmail, setSentEmail] = useState(false);
+
+  // Reset the per-channel "sent" flags whenever a new draft is generated
+  useEffect(() => {
+    setSentDm(false);
+    setSentEmail(false);
+  }, [draft]);
 
   async function handleSend() {
-    if (!prospect.email || !draft) return;
+    // "Send via Gmail" — sends the email AND stamps it as sent (since the send itself is unambiguous proof)
+    if (!prospect.email || !draft || sentEmail) return;
     setSending(true); setSendResult(null);
     const result = await sendEmail(prospect.email, draft.emailSubject, draft.emailBody);
     setSending(false);
     if (result.success) {
       setSendResult("sent");
+      setSentEmail(true);
       logOutreach("emails");
       if (onChannel) {
         onChannel("email", `Subject: ${draft.emailSubject}\n\n${draft.emailBody}`, effectiveType);
@@ -865,17 +874,27 @@ ABSOLUTE RULES — violating any of these makes this read as a mass blast:
     else { setSendResult(result.error || "unknown error"); }
   }
 
-  function handleDmCopy() {
+  // Mark the DM as sent — fires only when the user explicitly confirms
+  // they pasted and sent in Instagram. Stamps the touch.
+  function handleMarkDmSent() {
+    if (sentDm || !draft) return;
+    setSentDm(true);
     logOutreach("dms");
     if (onChannel) {
-      onChannel("dm", draft?.dm, effectiveType);
+      onChannel("dm", draft.dm, effectiveType);
     }
+    if (onSend) onSend();
   }
 
-  function handleEmailCopy() {
-    if (onChannel && draft) {
+  // Mark email as sent without going through Gmail (user copied + sent from elsewhere)
+  function handleMarkEmailSent() {
+    if (sentEmail || !draft) return;
+    setSentEmail(true);
+    logOutreach("emails");
+    if (onChannel) {
       onChannel("email", `Subject: ${draft.emailSubject}\n\n${draft.emailBody}`, effectiveType);
     }
+    if (onSend) onSend();
   }
 
   return (
@@ -924,31 +943,38 @@ ABSOLUTE RULES — violating any of these makes this read as a mass blast:
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <Label>IG DM</Label>
                   <div style={{ display: "flex", gap: 6 }}>
-                    <CopyBtn text={draft.dm} label="Copy DM" sm onCopy={handleDmCopy} />
+                    <CopyBtn text={draft.dm} label="Copy DM" sm />
                     {prospect.instagram && (
                       <a href={prospect.instagram} target="_blank" rel="noreferrer"
                         style={{ fontFamily: MONO, fontSize: 10, color: C.purple, padding: "5px 11px", borderRadius: 7, border: `1px solid ${C.purple}45`, textDecoration: "none", background: `${C.purple}12` }}>
                         Open IG
                       </a>
                     )}
+                    <Btn onClick={handleMarkDmSent} disabled={sentDm} color={sentDm ? C.muted : C.green} sm>
+                      {sentDm ? "✓ Sent" : "Mark sent"}
+                    </Btn>
                   </div>
                 </div>
                 <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.dm}</div>
+                {sentDm && <p style={{ fontFamily: MONO, fontSize: 10, color: C.green, margin: "6px 0 0" }}>Stamped as touch #{touchCount}. Lead state updated.</p>}
               </div>
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <Label>Email</Label>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm onCopy={handleEmailCopy} />
+                    <CopyBtn text={`Subject: ${draft.emailSubject}\n\n${draft.emailBody}`} label="Copy" sm />
                     {prospect.email
-                      ? <Btn onClick={() => setShowSend(f => !f)} color={C.green} sm>{showSend ? "Cancel" : "Send via Gmail"}</Btn>
+                      ? <Btn onClick={() => setShowSend(f => !f)} disabled={sentEmail} color={sentEmail ? C.muted : C.green} sm>{showSend ? "Cancel" : "Send via Gmail"}</Btn>
                       : <span style={{ fontFamily: MONO, fontSize: 10, color: C.muted }}>Add email in Edit to send</span>
                     }
+                    <Btn onClick={handleMarkEmailSent} disabled={sentEmail} color={sentEmail ? C.muted : C.green} sm>
+                      {sentEmail ? "✓ Sent" : "Mark sent"}
+                    </Btn>
                   </div>
                 </div>
                 <div style={{ fontFamily: MONO, fontSize: 11, color: C.amber, marginBottom: 6 }}>Subject: {draft.emailSubject}</div>
                 <div style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.75, color: C.text, background: "rgba(0,0,0,0.3)", borderRadius: 8, padding: "12px 14px", border: `1px solid ${C.border}`, whiteSpace: "pre-wrap" }}>{draft.emailBody}</div>
-                {showSend && prospect.email && (
+                {showSend && prospect.email && !sentEmail && (
                   <div style={{ marginTop: 10 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: `${C.green}08`, borderRadius: 8, border: `1px solid ${C.green}20`, marginBottom: 8 }}>
                       <Dot color={C.green} size={5} />
@@ -959,6 +985,7 @@ ABSOLUTE RULES — violating any of these makes this read as a mass blast:
                 )}
                 {sendResult === "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.green, margin: "8px 0 0" }}>Sent</p>}
                 {sendResult && sendResult !== "sent" && <p style={{ fontFamily: MONO, fontSize: 11, color: C.red, margin: "8px 0 0" }}>Send failed: {sendResult}</p>}
+                {sentEmail && sendResult !== "sent" && <p style={{ fontFamily: MONO, fontSize: 10, color: C.green, margin: "6px 0 0" }}>Stamped as touch #{touchCount}. Lead state updated.</p>}
               </div>
             </>
           )}
