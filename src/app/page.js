@@ -64,16 +64,32 @@ KEY FACTS:
 - Only available evenings and weekends
 
 TRAFTON'S VOICE - follow this exactly:
-- Lead with one specific observation about THIS business. Not a generic opener.
-- State the practical gap plainly. One sentence. Do not explain what it costs them or lecture them about it.
-- Never tell them they are losing business, losing clients, or falling behind competitors. They know their business. That framing is condescending and kills replies.
-- Never use competitor framing. Do not mention what competitors are doing.
+
+THE CORE RULE — STATE DATA, DO NOT CHARACTERIZE IT:
+When referencing the prospect's metrics (rating, review count, location), state them as bare facts. Do NOT add adjectives or interpretation. The data is the observation. Editorializing the data makes the message read as templated outreach, not human.
+- WRONG: "You've built a solid reputation" / "Your perfect 5-star rating shows quality" / "239 reviews shows you're doing great work"
+- RIGHT: "5 stars on 7 reviews in Westminster" / "239 reviews at 4.4 stars in Garden Grove"
+
+OTHER VOICE RULES:
+- Lead with one specific data observation about THIS business. Just the numbers. No "solid", no "impressive", no "great work", no "reputation", no "quality".
+- State what RWS does plainly. Do NOT explain what a website would DO for them. "I build websites for beauty businesses in OC" is correct. "I build websites that help clients find and book more easily" is WRONG — that's value framing.
+- Never tell them they are losing business, losing clients, or falling behind competitors. Never use competitor framing.
 - Short. Every word earns its place.
-- Low-pressure close. One sentence. Send them to rogers-websolutions.com/book.
-- NEVER say: leverage, digital footprint, online presence, I'd love the opportunity, I hope this finds you well, we help businesses grow, which means, that means, missing out
-- NEVER use em-dashes, exclamation points, or fake casual openers like "Hey!" or "Hope you're well"
-- NEVER invent data. Only use facts provided about the actual business.
+- Low-pressure close. Send them to rogers-websolutions.com/book.
 - DMs are for beauty/service Instagram businesses ONLY. Trades get email.
+
+BANNED PHRASES — these appear in EVERY bad draft and must NEVER be used:
+Judgment words about their business: "solid", "great work", "quality you deliver", "reputation", "impressive", "perfect rating", "stellar", "amazing"
+Template filler: "like yours", "businesses like yours", "for businesses like"
+Hedge language: "exploring", "if you're interested", "if you're interested in exploring", "might look like", "could look like for you" (slightly different from "what one could look like" which is fine)
+Value framing — these explain what a website does FOR them, which is FORBIDDEN: "help clients", "help you", "make it easier", "easier to book", "find and book", "showcase your services", "showcase what you offer", "grow your business", "more clients", "more bookings"
+Corporate jargon: "online presence", "digital footprint", "online visibility", "leverage", "robust"
+Urgency / pain: "losing", "missing out", "falling behind", "before competitors", "you're missing"
+Lecture connectors: "which means", "that means", "this means"
+Fake casual: "Hey!", "Hope this finds you well", "Hope you're doing well", "I'd love the opportunity", "I'd love to chat"
+Punctuation: em-dashes (use commas, periods, or line breaks), exclamation points
+
+- NEVER invent data. Only use facts provided about the actual business.
 
 EMAIL SIGNATURE - always end emails with exactly this, on its own line:
 Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com
@@ -819,7 +835,62 @@ ABSOLUTE RULES — violating any of these makes this read as a mass blast:
 - You MAY add ONE new factual detail about the OFFER (timeline like "builds usually go live in about a week", what's included like "Google Business Profile setup included", payment terms). NOT a benefit. A FACT.
 - Or skip the new detail entirely and just bump with the link. A 2-sentence "wanted to follow up here in case it got buried, link's still open if useful: rogers-websolutions.com/book" is GOOD copy, not lazy copy.
 - DM is 2 sentences MAX. Email body is 2-3 short paragraphs MAX.`
-          : `Write a cold IG DM and cold email for this REAL business. DM rules: 3 sentences MAX. Sentence 1: one specific observation about this business using real data only (rating, review count, category). Sentence 2: open a door — one plain sentence about what RWS does, no problem framing, no gap lecture, no "which means", no pain amplification, no competitor mention. Sentence 3: soft ask with rogers-websolutions.com/book. Cold email: 3-4 short paragraphs. Same rules — observation first, door open second, soft ask close. Do not use "online presence", "digital footprint", "missing out", "losing", "falling behind", or any urgency language.`;
+          : `Write a cold IG DM and cold email for this REAL business.
+
+CRITICAL RULE — STATE DATA, DO NOT CHARACTERIZE IT:
+The single biggest failure mode is dressing up interpretation as observation. State the number. Do not editorialize the number.
+- WRONG: "You've built a solid 5-star reputation" → "solid" + "reputation" is interpretation
+- WRONG: "Your perfect 5-star rating shows the quality you deliver" → "shows the quality" is interpretation
+- WRONG: "239 reviews shows you're doing great work" → "shows you're doing great work" is interpretation
+- RIGHT: "5 stars on 7 reviews in Westminster"
+- RIGHT: "239 reviews at 4.4 stars in Garden Grove"
+- RIGHT: "Saw the 38 reviews on Google Maps for Anaheim"
+Just the data point. Period. No adjectives that imply judgment ("solid", "great", "impressive", "perfect"). No nouns that imply judgment ("reputation", "quality", "track record"). Numbers and location only.
+
+BANNED PHRASES — every cold draft is checked against this list. If any of these appear, the draft fails:
+- "solid" "great work" "quality you deliver" "reputation" "impressive" "perfect" (judgment words)
+- "like yours" "for businesses like yours" (template filler)
+- "exploring" "if you're interested" "if you're interested in exploring" (hedge language)
+- "help clients" "help you" "make it easier" "easier to book" "find and book" "showcase" "grow your business" (value framing — explaining what a website does FOR them)
+- "online presence" "digital footprint" "online visibility" (corporate jargon)
+- "losing" "missing out" "falling behind" (urgency / pain framing)
+- "which means" "that means" (cause-and-effect lecture)
+- "Hey!" "Hope this finds you well" "Hope you're doing well" "I'd love" (fake casual / overly polite)
+- em-dashes (use commas, periods, or line breaks)
+- exclamation points
+
+THE STRUCTURE:
+
+Sentence 1 (DM) / Paragraph 1 (Email): ONE specific observation. Just data. Format: "[Data point] in [city]." or "Saw [business name] has [data point] in [city]."
+Sentence 2 (DM) / Paragraph 2 (Email): What RWS does. NOT what a website would do for them. The standard line is: "I build websites for [niche category] in OC." or "I build small websites for [niche] businesses in Orange County." Use a variant if needed but never expand into benefits.
+Sentence 3 (DM) / Paragraph 3 (Email): The link. Format: "If it's ever worth a look: rogers-websolutions.com/book" or "15 minutes here if useful: rogers-websolutions.com/book" or "rogers-websolutions.com/book if you ever want to see what it could look like."
+
+Cold email may add ONE paragraph between #2 and #3 with a fact about the offer (NOT a benefit): pricing ("$500 builds, or $750 plus $200/month if you want hosting and ongoing edits"), timeline ("usually live in about a week"), what's included ("includes Google Business Profile setup"). One fact. Not a list. Not a sales pitch. A fact.
+
+PASSING EXAMPLES — match this voice exactly:
+
+Example 1 (DM, nail salon):
+"5 stars on 47 reviews for Glow Nails in Westminster. I build websites for beauty businesses in OC so you have a real site outside of Instagram. If it's ever worth a look: rogers-websolutions.com/book
+Trafton @ Rogers Web Solutions"
+
+Example 2 (DM, lash studio):
+"Saw Lash Lab has 5 stars on 7 reviews in Westminster. I build small websites for service businesses in OC. rogers-websolutions.com/book if you ever want to see what one could look like.
+Trafton @ Rogers Web Solutions"
+
+Example 3 (Email, handyman):
+"Subject: Martinez Home Repair — 38 reviews in Anaheim
+
+Hi,
+
+Came across Martinez Home Repair on Google Maps. 38 reviews at 4.9 stars in Anaheim.
+
+I build websites for trades in Orange County. Builds are $500 one-time, or $750 plus $200/month if you want me to handle hosting and ongoing edits. New sites usually go live in about a week.
+
+If it's worth a 15-minute call to see what would make sense for you: rogers-websolutions.com/book
+
+Trafton Rogers | Rogers Web Solutions | trogers@rogers-websolutions.com"
+
+Match THIS voice. Short. Flat. Data-stated-not-praised. No pitch language. No "help you." No "easier." No "showcase."`;
 
     // Build full prior-context block from outreachHistory
     const priorContextBlock = hasPriorContext
